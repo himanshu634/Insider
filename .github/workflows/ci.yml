@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      web: ${{ steps.filter.outputs.web }}
+      collector: ${{ steps.filter.outputs.collector }}
+      tools: ${{ steps.filter.outputs.tools }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            shared: &shared
+              - packages/contracts/**
+              - pnpm-lock.yaml
+              - tsconfig.base.json
+            api:
+              - *shared
+              - services/api/**
+            web:
+              - *shared
+              - apps/web/**
+            collector:
+              - *shared
+              - apps/collector/**
+              - packages/fixtures/**
+            tools:
+              - *shared
+              - tools/**
+
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Generated types match openapi.yaml
+        run: pnpm gen && git diff --exit-code packages/contracts
+
+  api:
+    needs: changes
+    if: needs.changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: insider
+          POSTGRES_PASSWORD: insider
+          POSTGRES_DB: insider
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U insider" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://insider:insider@localhost:5432/insider
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @insider/api check
+      - run: pnpm --filter @insider/api test
+      - name: Migrations apply to real Postgres and stay inside market_intel
+        run: |
+          pnpm --filter @insider/api db:migrate
+          pnpm --filter @insider/api db:migrate
+          test "$(psql "$DATABASE_URL" -tAc "select count(*) from information_schema.tables where table_schema='public'")" = "0"
+      - name: Schema and migrations in sync
+        working-directory: services/api
+        run: pnpm exec drizzle-kit check && pnpm exec drizzle-kit generate | grep -q "No schema changes"
+      - run: pnpm --filter @insider/api build
+
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    env:
+      FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @insider/web check
+      - run: pnpm --filter @insider/web test
+      - run: pnpm --filter @insider/web build
+      - name: Deploy preview to Firebase Hosting
+        if: github.event_name == 'pull_request' && env.FIREBASE_SERVICE_ACCOUNT != ''
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          entryPoint: apps/web
+
+  collector:
+    needs: changes
+    if: needs.changes.outputs.collector == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @insider/collector check
+      - run: pnpm --filter @insider/collector test
+      - run: pnpm --filter @insider/collector build
+
+  tools:
+    needs: changes
+    if: needs.changes.outputs.tools == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter "./tools/**" --if-present check
+      - run: pnpm --filter "./tools/**" --if-present test

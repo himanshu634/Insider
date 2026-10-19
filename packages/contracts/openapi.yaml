@@ -1,0 +1,1161 @@
+openapi: 3.1.0
+info:
+  title: Insider API
+  version: 0.1.0
+  description: |
+    Source of truth for every Insider endpoint. FastAPI implements it, the web app's
+    TypeScript client and the API's Pydantic models are generated from it (`make gen`).
+
+    Two kinds of caller:
+    - **Collector** (macOS menu-bar app) — per-device bearer token.
+    - **Web app** — team user login (provider still open: Bull Connect auth or Supabase Auth).
+servers:
+  - url: http://localhost:8000
+    description: Local dev
+tags:
+  - name: ingest
+  - name: devices
+  - name: groups
+  - name: brief
+  - name: prices
+  - name: insights
+  - name: messages
+  - name: review
+  - name: dictionaries
+  - name: ask
+  - name: meta
+
+paths:
+  /healthz:
+    get:
+      tags: [meta]
+      operationId: healthz
+      security: []
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  # ---------------------------------------------------------------- collector
+  /v1/ingest/messages:
+    post:
+      tags: [ingest]
+      operationId: ingestMessages
+      summary: Upload a batch of messages (idempotent on group JID + stanza ID)
+      security: [{ deviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IngestMessagesRequest"
+      responses:
+        "200":
+          description: Per-item result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestMessagesResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /v1/ingest/media/upload-url:
+    post:
+      tags: [ingest]
+      operationId: createMediaUploadUrl
+      summary: Get a signed GCS URL for one media file
+      security: [{ deviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MediaUploadUrlRequest"
+      responses:
+        "200":
+          description: Signed upload URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaUploadUrlResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/ingest/media/complete:
+    post:
+      tags: [ingest]
+      operationId: completeMediaUpload
+      summary: Confirm an upload and queue OCR
+      security: [{ deviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MediaCompleteRequest"
+      responses:
+        "202":
+          description: Queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/groups/catalog:
+    post:
+      tags: [groups]
+      operationId: postGroupCatalog
+      summary: Full list of groups the device can see
+      security: [{ deviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupCatalogRequest"
+      responses:
+        "200":
+          description: Catalog stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupCatalogResponse"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/devices/config:
+    get:
+      tags: [devices]
+      operationId: getDeviceConfig
+      summary: Watched groups, sync interval and paused flag for this device
+      security: [{ deviceToken: [] }]
+      responses:
+        "200":
+          description: Config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceConfig"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/devices/heartbeat:
+    post:
+      tags: [devices]
+      operationId: postHeartbeat
+      security: [{ deviceToken: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HeartbeatRequest"
+      responses:
+        "204":
+          description: Recorded
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # ---------------------------------------------------------------- web app
+  /v1/brief/{date}:
+    get:
+      tags: [brief]
+      operationId: getBrief
+      security: [{ userAuth: [] }]
+      parameters:
+        - name: date
+          in: path
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Daily brief and its insights
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Brief"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/prices/latest:
+    get:
+      tags: [prices]
+      operationId: getLatestPrices
+      security: [{ userAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/CommodityFilter" }
+        - name: district
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Latest price per commodity × market
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LatestPrice"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/prices/daily:
+    get:
+      tags: [prices]
+      operationId: getDailyPrices
+      security: [{ userAuth: [] }]
+      parameters:
+        - name: commodity
+          in: query
+          required: true
+          schema: { type: string }
+        - name: markets
+          in: query
+          description: Comma-separated market slugs; all markets when omitted
+          schema: { type: string }
+        - { $ref: "#/components/parameters/DateFrom" }
+        - { $ref: "#/components/parameters/DateTo" }
+      responses:
+        "200":
+          description: Daily series
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DailyPricePoint"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/spreads:
+    get:
+      tags: [prices]
+      operationId: getSpreads
+      security: [{ userAuth: [] }]
+      parameters:
+        - name: commodity
+          in: query
+          required: true
+          schema: { type: string }
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: base_market
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Market-to-market spread
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Spread"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/insights:
+    get:
+      tags: [insights]
+      operationId: listInsights
+      security: [{ userAuth: [] }]
+      parameters:
+        - name: type
+          in: query
+          schema: { $ref: "#/components/schemas/InsightType" }
+        - { $ref: "#/components/parameters/CommodityFilter" }
+        - name: severity
+          in: query
+          schema: { $ref: "#/components/schemas/Severity" }
+        - { $ref: "#/components/parameters/DateFrom" }
+        - { $ref: "#/components/parameters/DateTo" }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200":
+          description: Insight history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InsightPage"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/messages:
+    get:
+      tags: [messages]
+      operationId: listMessages
+      security: [{ userAuth: [] }]
+      parameters:
+        - name: group
+          in: query
+          description: Group JID
+          schema: { type: string }
+        - name: label
+          in: query
+          schema: { $ref: "#/components/schemas/MessageLabelValue" }
+        - name: q
+          in: query
+          description: Full-text search
+          schema: { type: string }
+        - { $ref: "#/components/parameters/DateFrom" }
+        - { $ref: "#/components/parameters/DateTo" }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200":
+          description: Message feed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagePage"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/messages/{id}:
+    get:
+      tags: [messages]
+      operationId: getMessage
+      security: [{ userAuth: [] }]
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+      responses:
+        "200":
+          description: One message with observations and media
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageDetail"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/review/observations:
+    get:
+      tags: [review]
+      operationId: listReviewObservations
+      security: [{ userAuth: [] }]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/ObservationStatus"
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200":
+          description: Review queue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ObservationPage"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      tags: [review]
+      operationId: reviewObservation
+      summary: Approve, edit or reject one observation
+      security: [{ userAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ObservationReview"
+      responses:
+        "200":
+          description: Updated observation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceObservation"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/groups:
+    get:
+      tags: [groups]
+      operationId: listGroups
+      security: [{ userAuth: [] }]
+      responses:
+        "200":
+          description: Every group seen by any collector
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Group"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      tags: [groups]
+      operationId: updateGroup
+      security: [{ userAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupUpdate"
+      responses:
+        "200":
+          description: Updated group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/devices:
+    get:
+      tags: [devices]
+      operationId: listDevices
+      security: [{ userAuth: [] }]
+      responses:
+        "200":
+          description: Collector health
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Device"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/dictionaries/commodities:
+    get:
+      tags: [dictionaries]
+      operationId: listCommodities
+      security: [{ userAuth: [] }]
+      responses:
+        "200":
+          description: Commodities
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Commodity" }
+    post:
+      tags: [dictionaries]
+      operationId: createCommodity
+      security: [{ userAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommodityInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Commodity" }
+  /v1/dictionaries/commodities/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/IdPath" }
+    put:
+      tags: [dictionaries]
+      operationId: updateCommodity
+      security: [{ userAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommodityInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Commodity" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [dictionaries]
+      operationId: deleteCommodity
+      security: [{ userAuth: [] }]
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/dictionaries/markets:
+    get:
+      tags: [dictionaries]
+      operationId: listMarkets
+      security: [{ userAuth: [] }]
+      responses:
+        "200":
+          description: Markets
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Market" }
+    post:
+      tags: [dictionaries]
+      operationId: createMarket
+      security: [{ userAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MarketInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Market" }
+  /v1/dictionaries/markets/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/IdPath" }
+    put:
+      tags: [dictionaries]
+      operationId: updateMarket
+      security: [{ userAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MarketInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Market" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [dictionaries]
+      operationId: deleteMarket
+      security: [{ userAuth: [] }]
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/dictionaries/units:
+    get:
+      tags: [dictionaries]
+      operationId: listUnits
+      security: [{ userAuth: [] }]
+      responses:
+        "200":
+          description: Units
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Unit" }
+    post:
+      tags: [dictionaries]
+      operationId: createUnit
+      security: [{ userAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UnitInput" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Unit" }
+  /v1/dictionaries/units/{id}:
+    parameters:
+      - { $ref: "#/components/parameters/IdPath" }
+    put:
+      tags: [dictionaries]
+      operationId: updateUnit
+      security: [{ userAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UnitInput" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Unit" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [dictionaries]
+      operationId: deleteUnit
+      security: [{ userAuth: [] }]
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/ask:
+    post:
+      tags: [ask]
+      operationId: ask
+      summary: Natural-language question over the price data (Phase 4)
+      security: [{ userAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AskRequest" }
+      responses:
+        "200":
+          description: Answer
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AskResponse" }
+        "501":
+          description: Not implemented yet
+
+components:
+  securitySchemes:
+    deviceToken:
+      type: http
+      scheme: bearer
+      description: Per-collector token; stored in the Mac Keychain, hashed on the server.
+    userAuth:
+      type: http
+      scheme: bearer
+      description: Team user session token.
+
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    DateFrom:
+      name: from
+      in: query
+      schema: { type: string, format: date }
+    DateTo:
+      name: to
+      in: query
+      schema: { type: string, format: date }
+    CommodityFilter:
+      name: commodity
+      in: query
+      description: Commodity slug
+      schema: { type: string }
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid token
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ValidationError:
+      description: Request body failed validation
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Health:
+      type: object
+      required: [status, version]
+      properties:
+        status: { type: string, enum: [ok] }
+        version: { type: string }
+
+    Error:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          description: Human-readable message or a list of validation errors
+          oneOf:
+            - type: string
+            - type: array
+              items: { type: object, additionalProperties: true }
+
+    StatusResponse:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+
+    # ---- ingest
+    MessageType:
+      type: string
+      enum: [text, image, document, audio, video, sticker, location, contact, system, other]
+
+    MediaMeta:
+      type: object
+      required: [mime, size_bytes]
+      properties:
+        mime: { type: string, examples: ["image/jpeg"] }
+        size_bytes: { type: integer, minimum: 0 }
+        file_name: { type: [string, "null"] }
+
+    IngestMessage:
+      type: object
+      required: [stanza_id, group_jid, sender_hash, sent_at, type, is_forwarded]
+      properties:
+        stanza_id: { type: string, maxLength: 128, description: WhatsApp message stanza ID }
+        group_jid: { type: string, pattern: "@g\\.us$", maxLength: 128 }
+        sender_hash:
+          type: string
+          description: HMAC-SHA256 (hex) of the sender JID; the plain JID never leaves the Mac
+          minLength: 64
+          maxLength: 64
+        sender_name: { type: [string, "null"], maxLength: 256 }
+        sent_at: { type: string, format: date-time, description: UTC }
+        type: { $ref: "#/components/schemas/MessageType" }
+        text: { type: [string, "null"], maxLength: 65536 }
+        quoted_stanza_id: { type: [string, "null"], maxLength: 128 }
+        is_forwarded: { type: boolean }
+        media:
+          oneOf:
+            - $ref: "#/components/schemas/MediaMeta"
+            - type: "null"
+
+    IngestMessagesRequest:
+      type: object
+      required: [messages]
+      properties:
+        messages:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: { $ref: "#/components/schemas/IngestMessage" }
+
+    IngestItemStatus:
+      type: string
+      enum: [accepted, duplicate, rejected]
+
+    IngestItemResult:
+      type: object
+      required: [group_jid, stanza_id, status]
+      properties:
+        group_jid: { type: string }
+        stanza_id: { type: string }
+        status: { $ref: "#/components/schemas/IngestItemStatus" }
+        error: { type: [string, "null"] }
+
+    IngestMessagesResponse:
+      type: object
+      required: [accepted, duplicate, rejected, results]
+      properties:
+        accepted: { type: integer }
+        duplicate: { type: integer }
+        rejected: { type: integer }
+        results:
+          type: array
+          items: { $ref: "#/components/schemas/IngestItemResult" }
+
+    MediaUploadUrlRequest:
+      type: object
+      required: [group_jid, stanza_id, mime, size_bytes, sha256]
+      properties:
+        group_jid: { type: string }
+        stanza_id: { type: string }
+        mime: { type: string }
+        size_bytes: { type: integer, minimum: 0, maximum: 52428800 }
+        sha256: { type: string, minLength: 64, maxLength: 64 }
+
+    MediaUploadUrlResponse:
+      type: object
+      required: [media_id, upload_url, gcs_path, expires_at]
+      properties:
+        media_id: { type: integer, format: int64 }
+        upload_url: { type: string, format: uri }
+        gcs_path: { type: string }
+        expires_at: { type: string, format: date-time }
+        already_uploaded:
+          type: boolean
+          default: false
+          description: True when a file with the same sha256 is already stored; skip the upload
+
+    MediaCompleteRequest:
+      type: object
+      required: [media_id]
+      properties:
+        media_id: { type: integer, format: int64 }
+
+    CatalogGroup:
+      type: object
+      required: [jid, name]
+      properties:
+        jid: { type: string, pattern: "@g\\.us$" }
+        name: { type: string }
+        member_count: { type: [integer, "null"] }
+
+    GroupCatalogRequest:
+      type: object
+      required: [groups]
+      properties:
+        groups:
+          type: array
+          items: { $ref: "#/components/schemas/CatalogGroup" }
+
+    GroupCatalogResponse:
+      type: object
+      required: [received, created]
+      properties:
+        received: { type: integer }
+        created: { type: integer }
+
+    DeviceConfig:
+      type: object
+      required: [watched_group_jids, sync_interval_seconds, paused]
+      properties:
+        watched_group_jids:
+          type: array
+          items: { type: string }
+        sync_interval_seconds: { type: integer, default: 90 }
+        paused: { type: boolean }
+
+    HeartbeatRequest:
+      type: object
+      required: [app_version, schema_fingerprint, schema_ok, outbox_size]
+      properties:
+        app_version: { type: string }
+        schema_fingerprint: { type: string }
+        schema_ok: { type: boolean }
+        outbox_size: { type: integer, minimum: 0 }
+        last_sync_at: { type: [string, "null"], format: date-time }
+
+    # ---- read side
+    Severity:
+      type: string
+      enum: [info, notable, high]
+
+    InsightType:
+      type: string
+      enum: [price_move, spread, arrival_spike, conflict, news]
+
+    Insight:
+      type: object
+      required: [id, date, type, severity, title, detail]
+      properties:
+        id: { type: integer, format: int64 }
+        date: { type: string, format: date }
+        type: { $ref: "#/components/schemas/InsightType" }
+        commodity: { type: [string, "null"] }
+        market: { type: [string, "null"] }
+        severity: { $ref: "#/components/schemas/Severity" }
+        title: { type: string }
+        detail: { type: string }
+
+    InsightPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Insight" }
+        next_cursor: { type: [string, "null"] }
+
+    Brief:
+      type: object
+      required: [date, body, insights]
+      properties:
+        date: { type: string, format: date }
+        body: { type: string, description: Markdown }
+        generated_at: { type: [string, "null"], format: date-time }
+        insights:
+          type: array
+          items: { $ref: "#/components/schemas/Insight" }
+
+    LatestPrice:
+      type: object
+      required: [commodity, market, obs_date, modal_per_quintal, source_count, group_count]
+      properties:
+        commodity: { type: string }
+        variety: { type: [string, "null"] }
+        market: { type: string }
+        district: { type: [string, "null"] }
+        obs_date: { type: string, format: date }
+        min_per_quintal: { type: [number, "null"] }
+        max_per_quintal: { type: [number, "null"] }
+        modal_per_quintal: { type: number }
+        change_vs_yesterday: { type: [number, "null"] }
+        change_vs_7d_avg: { type: [number, "null"] }
+        source_count: { type: integer }
+        group_count: { type: integer }
+
+    QualityFlag:
+      type: string
+      enum: [ok, single_source, conflicting, out_of_bounds]
+
+    DailyPricePoint:
+      type: object
+      required: [commodity, market, date, median_modal, source_count, group_count, quality_flag]
+      properties:
+        commodity: { type: string }
+        market: { type: string }
+        date: { type: string, format: date }
+        median_modal: { type: number }
+        min: { type: [number, "null"] }
+        max: { type: [number, "null"] }
+        arrivals_quintal: { type: [number, "null"] }
+        source_count: { type: integer }
+        group_count: { type: integer }
+        quality_flag: { $ref: "#/components/schemas/QualityFlag" }
+
+    SpreadRow:
+      type: object
+      required: [market, modal_per_quintal, diff_vs_base]
+      properties:
+        market: { type: string }
+        modal_per_quintal: { type: number }
+        diff_vs_base: { type: number }
+
+    Spread:
+      type: object
+      required: [commodity, date, base_market, rows]
+      properties:
+        commodity: { type: string }
+        date: { type: string, format: date }
+        base_market: { type: string }
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/SpreadRow" }
+
+    MessageLabelValue:
+      type: string
+      enum: [price, arrivals, news, advisory, noise]
+
+    GroupRef:
+      type: object
+      required: [jid, name]
+      properties:
+        jid: { type: string }
+        name: { type: string }
+
+    Message:
+      type: object
+      required: [id, group, sent_at, type, is_forwarded, cluster_group_count]
+      properties:
+        id: { type: integer, format: int64 }
+        group: { $ref: "#/components/schemas/GroupRef" }
+        sender_name: { type: [string, "null"] }
+        sent_at: { type: string, format: date-time }
+        type: { $ref: "#/components/schemas/MessageType" }
+        text: { type: [string, "null"] }
+        label:
+          oneOf:
+            - $ref: "#/components/schemas/MessageLabelValue"
+            - type: "null"
+        is_forwarded: { type: boolean }
+        cluster_group_count:
+          type: integer
+          description: How many groups carried the same content
+
+    MessagePage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Message" }
+        next_cursor: { type: [string, "null"] }
+
+    Media:
+      type: object
+      required: [id, mime, ocr_status]
+      properties:
+        id: { type: integer, format: int64 }
+        mime: { type: string }
+        url: { type: [string, "null"], format: uri, description: Short-lived signed read URL }
+        ocr_status: { type: string, enum: [pending, done, failed, skipped] }
+
+    MessageDetail:
+      allOf:
+        - $ref: "#/components/schemas/Message"
+        - type: object
+          required: [observations, media]
+          properties:
+            observations:
+              type: array
+              items: { $ref: "#/components/schemas/PriceObservation" }
+            media:
+              type: array
+              items: { $ref: "#/components/schemas/Media" }
+
+    ObservationStatus:
+      type: string
+      enum: [auto, needs_review, approved, rejected]
+
+    PriceObservation:
+      type: object
+      required: [id, message_id, commodity, market, obs_date, unit, confidence, status]
+      properties:
+        id: { type: integer, format: int64 }
+        message_id: { type: integer, format: int64 }
+        commodity: { type: string }
+        variety: { type: [string, "null"] }
+        market: { type: string }
+        obs_date: { type: string, format: date }
+        min_raw: { type: [number, "null"] }
+        max_raw: { type: [number, "null"] }
+        modal_raw: { type: [number, "null"] }
+        unit: { type: string, examples: [per_20kg] }
+        min_per_quintal: { type: [number, "null"] }
+        max_per_quintal: { type: [number, "null"] }
+        modal_per_quintal: { type: [number, "null"] }
+        arrivals_quintal: { type: [number, "null"] }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        status: { $ref: "#/components/schemas/ObservationStatus" }
+
+    ObservationPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/PriceObservation" }
+        next_cursor: { type: [string, "null"] }
+
+    ObservationReview:
+      type: object
+      required: [id, action]
+      properties:
+        id: { type: integer, format: int64 }
+        action: { type: string, enum: [approve, edit, reject] }
+        changes:
+          type: object
+          description: Fields to change when action is edit
+          properties:
+            commodity: { type: string }
+            variety: { type: [string, "null"] }
+            market: { type: string }
+            obs_date: { type: string, format: date }
+            min_raw: { type: [number, "null"] }
+            max_raw: { type: [number, "null"] }
+            modal_raw: { type: [number, "null"] }
+            unit: { type: string }
+            arrivals_quintal: { type: [number, "null"] }
+
+    Group:
+      type: object
+      required: [id, jid, name, is_watched, primary_commodities]
+      properties:
+        id: { type: integer, format: int64 }
+        jid: { type: string }
+        name: { type: string }
+        member_count: { type: [integer, "null"] }
+        is_watched: { type: boolean }
+        region_tag: { type: [string, "null"] }
+        primary_commodities:
+          type: array
+          items: { type: string }
+        last_message_at: { type: [string, "null"], format: date-time }
+
+    GroupUpdate:
+      type: object
+      required: [id]
+      properties:
+        id: { type: integer, format: int64 }
+        is_watched: { type: boolean }
+        region_tag: { type: [string, "null"] }
+        primary_commodities:
+          type: array
+          items: { type: string }
+
+    DeviceStatus:
+      type: string
+      enum: [active, paused, silent, schema_mismatch, revoked]
+
+    Device:
+      type: object
+      required: [id, name, status]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        app_version: { type: [string, "null"] }
+        schema_fingerprint: { type: [string, "null"] }
+        last_heartbeat_at: { type: [string, "null"], format: date-time }
+        last_sync_at: { type: [string, "null"], format: date-time }
+        outbox_size: { type: [integer, "null"] }
+        status: { $ref: "#/components/schemas/DeviceStatus" }
+
+    CommodityInput:
+      type: object
+      required: [slug, name]
+      properties:
+        slug: { type: string, pattern: "^[a-z0-9-]+$" }
+        name: { type: string }
+        varieties:
+          type: array
+          items: { type: string }
+        synonyms:
+          type: array
+          description: Gujarati, Hindi and Gujlish spellings
+          items: { type: string }
+
+    Commodity:
+      allOf:
+        - $ref: "#/components/schemas/CommodityInput"
+        - type: object
+          required: [id]
+          properties:
+            id: { type: integer, format: int64 }
+
+    MarketInput:
+      type: object
+      required: [slug, name, state]
+      properties:
+        slug: { type: string, pattern: "^[a-z0-9-]+$" }
+        name: { type: string }
+        district: { type: [string, "null"] }
+        state: { type: string }
+        aliases:
+          type: array
+          items: { type: string }
+        lat: { type: [number, "null"] }
+        lng: { type: [number, "null"] }
+
+    Market:
+      allOf:
+        - $ref: "#/components/schemas/MarketInput"
+        - type: object
+          required: [id]
+          properties:
+            id: { type: integer, format: int64 }
+
+    UnitInput:
+      type: object
+      required: [code, label, factor_to_quintal]
+      properties:
+        code: { type: string, examples: [per_20kg] }
+        label: { type: string, examples: ["₹/20 kg"] }
+        factor_to_quintal:
+          type: number
+          description: Multiply a price in this unit by this to get ₹/quintal (per 20 kg → 5)
+        aliases:
+          type: array
+          items: { type: string }
+
+    Unit:
+      allOf:
+        - $ref: "#/components/schemas/UnitInput"
+        - type: object
+          required: [id]
+          properties:
+            id: { type: integer, format: int64 }
+
+    AskRequest:
+      type: object
+      required: [question]
+      properties:
+        question: { type: string, maxLength: 2000 }
+
+    AskResponse:
+      type: object
+      required: [answer]
+      properties:
+        answer: { type: string }
+        sources:
+          type: array
+          items: { type: integer, format: int64 }

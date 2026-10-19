@@ -54,8 +54,8 @@ Commodities: **castor and groundnut**, plus the mandis the team tracks. More are
 ```
  WhatsApp Desktop (Mac)          Backend (GCP + Supabase)                 Team
 ┌──────────────────────┐   ┌────────────────────────────────────┐   ┌───────────────┐
-│ macOS collector      │──▶│ FastAPI ingest ─▶ Celery pipeline  │──▶│ SvelteKit web │
-│ (Swift menu-bar app) │   │  dedupe → classify → extract →     │   │ app (phone +  │
+│ Insider Collector    │──▶│ Hono ingest API ─▶ BullMQ pipeline │──▶│ SvelteKit web │
+│ (Electron menu-bar)  │   │  dedupe → classify → extract →     │   │ app (phone +  │
 │ reads local SQLite   │   │  normalize → validate → store      │   │ desktop)      │
 │ copy, outbox upload  │──▶│ GCS (images, PDFs)  Postgres       │   │               │
 └──────────────────────┘   └────────────────────────────────────┘   └───────────────┘
@@ -68,38 +68,56 @@ Commodities: **castor and groundnut**, plus the mandis the team tracks. More are
 
 ---
 
-## Repository layout (monorepo)
+## Repository layout (monorepo, TypeScript only)
 
 ```
 insider/
   apps/
-    collector-macos/   Swift 6 menu-bar app (SwiftUI, GRDB)
-    web/               SvelteKit SPA (Svelte 5, TypeScript, Tailwind)
+    collector/         Electron menu-bar app (node:sqlite)
+    web/               SvelteKit SPA + the "Mandi Ledger" design system (/design style guide)
   services/
-    backend/           Django — the only owner of the schema and migrations (market_intel)
-    agents/            FastAPI APIs + Celery pipeline and scheduled jobs
+    api/               Hono API + BullMQ worker; Drizzle owns the schema (Postgres schema market_intel)
   packages/
-    contracts/         OpenAPI spec (source of truth) + generated TS and Pydantic types
-    fixtures/          anonymised WhatsApp DB snapshot, chat exports, golden extraction set
+    contracts/         OpenAPI spec (source of truth) + generated TypeScript types
+    fixtures/          synthetic WhatsApp DB (until Phase 0), golden extraction set later
   tools/
-    spike/             Phase 0 probe scripts
+    spike/             Phase 0 probe of a copy of the WhatsApp DB
     export-importer/   backfill from WhatsApp .txt chat exports
-  infra/               GCS, service accounts, Nginx, deploy scripts
+  infra/               GCS bucket script, systemd units, Nginx config
+  bin/insider          Mac command: start one service, or everything in dev mode
   docs/                plans and runbooks
 ```
 
-Workspaces: **pnpm** (web, contracts), **uv** (Python services and tools), **SwiftPM/Xcode** (collector).
+One language (TypeScript), one package manager (pnpm workspaces), one lockfile.
 
 ### Stack
 
 | Component | Tech | Hosting |
 |---|---|---|
-| Collector | Swift 6, SwiftUI MenuBarExtra, GRDB, SMAppService | The team's Mac (Developer ID signed, notarized) |
-| Schema | Django migrations | Supabase Postgres (prod + testing) |
-| APIs | FastAPI, Pydantic v2 | Agents VM behind Nginx |
-| Pipeline | Celery + Redis, LLM structured output (Gemini; Claude optional), Pillow | Agents VM workers |
+| Collector | Electron 38, TypeScript, `node:sqlite` | The team's Mac (signed + notarized `.app` in Phase 5) |
+| Schema | Drizzle ORM + drizzle-kit migrations, Postgres schema `market_intel` | Supabase Postgres (prod + testing) |
+| API | Hono on Node 22, request validation compiled from the OpenAPI spec | Agents VM behind Nginx |
+| Pipeline | BullMQ + Redis (inline mode without Redis), LLM structured output (Gemini; Claude optional) | Agents VM worker |
 | Media | Google Cloud Storage, signed URLs | asia-south1 |
-| Web | SvelteKit, TanStack Query, ECharts/LayerChart | Firebase Hosting |
+| Web | SvelteKit 3 (Svelte 5), Tailwind 4, TanStack Query, ECharts | Firebase Hosting |
+
+---
+
+## Run it locally (macOS)
+
+Prerequisites: Node 22 + pnpm and Homebrew PostgreSQL (`brew install postgresql@18`). Redis is optional (`brew install redis`); without it jobs run inline in the API.
+
+```bash
+bin/insider setup
+```
+
+```bash
+bin/insider dev
+```
+
+`bin/insider dev` starts everything in dev mode: a project-local Postgres, Redis (if installed), migrations, the API (:8000, watch mode), the job worker, the web app (:5173) and the collector against a synthetic WhatsApp fixture. Ctrl-C stops all of it.
+
+Start one service on its own with `bin/insider <db|redis|migrate|seed|api|worker|web|collector>`. Run `bin/insider help` for the full list, and `bin/insider test` for every test suite.
 
 ---
 

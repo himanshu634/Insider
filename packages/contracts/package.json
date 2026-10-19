@@ -1,0 +1,18 @@
+{
+  "name": "@insider/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./openapi.yaml": "./openapi.yaml"
+  },
+  "scripts": {
+    "gen": "openapi-typescript openapi.yaml -o src/schema.d.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.4.4",
+    "typescript": "^6.0.3"
+  }
+}

@@ -1,0 +1,246 @@
+#!/usr/bin/env bash
+# Insider dev commands for macOS.
+#
+#   bin/insider dev            start every service in dev mode (Ctrl-C stops all)
+#   bin/insider <service>      start one service in the foreground
+#   bin/insider help           list commands
+#
+# Local state (Postgres cluster, Redis data, fixture DB, logs) lives in .dev/ and is git-ignored.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEV="$ROOT/.dev"
+cd "$ROOT"
+
+# --- environment ---------------------------------------------------------------------------
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/.env"
+  set +a
+fi
+
+PG_PORT="${INSIDER_PG_PORT:-54329}"
+REDIS_PORT="${INSIDER_REDIS_PORT:-6380}"
+API_PORT="${INSIDER_API_PORT:-8000}"
+WEB_PORT="${INSIDER_WEB_PORT:-5173}"
+
+export DATABASE_URL="${DATABASE_URL:-postgres://insider@localhost:$PG_PORT/insider}"
+export REDIS_URL="${REDIS_URL:-redis://localhost:$REDIS_PORT}"
+export PORT="$API_PORT"
+export SENDER_HMAC_KEY="${SENDER_HMAC_KEY:-dev-sender-hmac-key}"
+export AUTH_DEV_BYPASS="${AUTH_DEV_BYPASS:-true}"
+export VITE_API_BASE_URL="${VITE_API_BASE_URL:-http://localhost:$API_PORT}"
+export INSIDER_API_URL="${INSIDER_API_URL:-http://localhost:$API_PORT}"
+export INSIDER_DEVICE_TOKEN="${INSIDER_DEVICE_TOKEN:-dev-device-token}"
+export INSIDER_WA_DB="${INSIDER_WA_DB:-$DEV/fixtures/ChatStorage.sqlite}"
+export INSIDER_WEB_URL="${INSIDER_WEB_URL:-http://localhost:$WEB_PORT}"
+
+# --- helpers -------------------------------------------------------------------------------
+bold() { printf '\033[1m%s\033[0m\n' "$*"; }
+warn() { printf '\033[33m! %s\033[0m\n' "$*" >&2; }
+die() { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
+need() { command -v "$1" >/dev/null 2>&1 || die "$1 not found. $2"; }
+
+wait_for_pg() {
+  for _ in $(seq 1 60); do
+    pg_isready -q -h localhost -p "$PG_PORT" -U insider && return 0
+    sleep 0.5
+  done
+  die "Postgres did not start on port $PG_PORT (log: $DEV/postgres.log)"
+}
+
+ensure_pg_cluster() {
+  need initdb "Install PostgreSQL: brew install postgresql@18"
+  if [[ ! -f "$DEV/postgres/PG_VERSION" ]]; then
+    mkdir -p "$DEV"
+    bold "Creating local Postgres cluster in .dev/postgres"
+    initdb -D "$DEV/postgres" -U insider --auth=trust -E UTF8 --locale=C >/dev/null
+  fi
+}
+
+ensure_database() {
+  wait_for_pg
+  if ! psql -h localhost -p "$PG_PORT" -U insider -d postgres -tAc \
+      "select 1 from pg_database where datname = 'insider'" | grep -q 1; then
+    createdb -h localhost -p "$PG_PORT" -U insider insider
+  fi
+}
+
+ensure_fixture_db() {
+  if [[ ! -f "$INSIDER_WA_DB" ]]; then
+    mkdir -p "$(dirname "$INSIDER_WA_DB")"
+    sqlite3 "$INSIDER_WA_DB" < "$ROOT/packages/fixtures/chatstorage/synthetic.sql"
+    echo "Built synthetic WhatsApp fixture at ${INSIDER_WA_DB#"$ROOT"/}"
+  fi
+}
+
+api() { pnpm --silent --filter @insider/api "$@"; }
+
+# --- single services (foreground) ----------------------------------------------------------
+cmd_db() {
+  ensure_pg_cluster
+  pg_isready -q -h localhost -p "$PG_PORT" -U insider && die "Something already listens on port $PG_PORT"
+  bold "Postgres on localhost:$PG_PORT (data: .dev/postgres)"
+  # macOS: postgres refuses to start without a valid LC_ALL ("postmaster became multithreaded")
+  export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+  exec postgres -D "$DEV/postgres" -p "$PG_PORT" -k "$DEV" -c listen_addresses=localhost
+}
+
+cmd_redis() {
+  need redis-server "Install Redis: brew install redis"
+  mkdir -p "$DEV/redis"
+  bold "Redis on localhost:$REDIS_PORT"
+  exec redis-server --port "$REDIS_PORT" --dir "$DEV/redis" --save "" --appendonly no
+}
+
+cmd_migrate() {
+  ensure_database
+  api db:migrate
+}
+
+cmd_seed() {
+  # Dev collector device whose token matches INSIDER_DEVICE_TOKEN.
+  api create-device "dev-mac" --token "$INSIDER_DEVICE_TOKEN" >/dev/null
+  echo "Dev collector device ready (token from INSIDER_DEVICE_TOKEN)"
+}
+
+cmd_api() {
+  bold "API on http://localhost:$API_PORT (docs: /docs)"
+  exec pnpm --filter @insider/api dev
+}
+
+cmd_worker() {
+  # BullMQ worker; also registers the IST cron schedules (aggregate, insights, brief, watchdog).
+  exec pnpm --filter @insider/api dev:worker
+}
+
+cmd_web() {
+  bold "Web on http://localhost:$WEB_PORT"
+  exec pnpm --filter @insider/web exec vite dev --port "$WEB_PORT" --strictPort
+}
+
+cmd_collector() {
+  ensure_fixture_db
+  bold "Collector reading ${INSIDER_WA_DB#"$ROOT"/} → $INSIDER_API_URL"
+  exec pnpm --filter @insider/collector dev
+}
+
+# --- everything (dev mode) -----------------------------------------------------------------
+PIDS=()
+COLORS=(36 35 32 33 34 31 96 95)
+
+start_bg() {
+  # start_bg <name> <command...>  — own process group, output prefixed with the name
+  local name="$1"; shift
+  local color="${COLORS[$(( ${#PIDS[@]} % ${#COLORS[@]} ))]}"
+  local prefix
+  prefix=$(printf '\033[%sm%-9s│\033[0m' "$color" "$name")
+  set -m
+  ( "$@" 2>&1 | awk -v p="$prefix" '{ print p " " $0; fflush() }' ) &
+  PIDS+=("$!")
+  set +m
+}
+
+stop_all() {
+  trap - INT TERM EXIT
+  echo
+  bold "Stopping services…"
+  for pid in "${PIDS[@]}"; do kill -TERM -- "-$pid" 2>/dev/null || true; done
+  wait 2>/dev/null || true
+}
+
+cmd_dev() {
+  local with_collector=1
+  for arg in "$@"; do
+    case "$arg" in
+      --no-collector) with_collector=0 ;;
+      *) die "Unknown option: $arg" ;;
+    esac
+  done
+
+  need pnpm "Install pnpm: brew install pnpm"
+  trap stop_all INT TERM EXIT
+
+  if pg_isready -q -h localhost -p "$PG_PORT" -U insider; then
+    echo "Using the Postgres already running on port $PG_PORT"
+  else
+    ensure_pg_cluster
+    start_bg db "$0" db
+  fi
+  cmd_migrate
+  cmd_seed
+
+  if command -v redis-server >/dev/null 2>&1; then
+    export QUEUE_INLINE=false
+    start_bg redis "$0" redis
+    start_bg worker "$0" worker
+  else
+    warn "redis-server not found (brew install redis): jobs run inline in the API, no worker or schedules."
+    export QUEUE_INLINE=true
+  fi
+
+  start_bg api "$0" api
+  start_bg web "$0" web
+  if [[ $with_collector == 1 ]]; then
+    start_bg collector "$0" collector
+  fi
+
+  bold "Insider dev is up — web http://localhost:$WEB_PORT · API http://localhost:$API_PORT/docs · Ctrl-C to stop"
+  wait
+}
+
+# --- setup, tests, codegen -----------------------------------------------------------------
+cmd_setup() {
+  need pnpm "Install pnpm: brew install pnpm"
+  pnpm install
+  [[ -f "$ROOT/.env" ]] || { cp "$ROOT/.env.example" "$ROOT/.env"; echo "Created .env from .env.example"; }
+  echo "Done. Next: bin/insider dev"
+}
+
+cmd_test() { pnpm -r --if-present test; }
+
+cmd_gen() { pnpm gen; }
+
+usage() {
+  cat <<EOF
+Usage: bin/insider <command>
+
+  dev [--no-collector]   Start everything in dev mode: Postgres, Redis (if installed),
+                         migrations, API (watch), job worker, web, collector
+  db                     Local Postgres on :$PG_PORT (.dev/postgres)
+  redis                  Local Redis on :$REDIS_PORT
+  migrate                Apply database migrations (drizzle)
+  seed                   Create the dev collector device
+  api                    API dev server on :$API_PORT (Hono, tsx watch)
+  worker                 Job worker + IST schedules (BullMQ, needs Redis)
+  web                    SvelteKit dev server on :$WEB_PORT
+  collector              Collector menu-bar app (Electron) against the synthetic fixture DB
+  setup                  Install all dependencies and create .env
+  test                   Run every test suite
+  gen                    Regenerate types from packages/contracts/openapi.yaml
+EOF
+}
+
+main() {
+  local cmd="${1:-help}"
+  [[ $# -gt 0 ]] && shift
+  case "$cmd" in
+    dev) cmd_dev "$@" ;;
+    db) cmd_db ;;
+    redis) cmd_redis ;;
+    migrate) cmd_migrate ;;
+    seed) cmd_seed ;;
+    api) cmd_api ;;
+    worker) cmd_worker ;;
+    web) cmd_web ;;
+    collector) cmd_collector ;;
+    setup) cmd_setup ;;
+    test) cmd_test ;;
+    gen) cmd_gen ;;
+    help | -h | --help) usage ;;
+    *) usage; die "Unknown command: $cmd" ;;
+  esac
+}
+
+main "$@"

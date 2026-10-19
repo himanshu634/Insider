@@ -1,0 +1,1576 @@
+{
+  "id": "447a2260-1d42-4746-94df-3c24e258fd52",
+  "prevId": "24ec029c-729e-4dd4-8e24-abab87d8028b",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "market_intel.collector_device": {
+      "name": "collector_device",
+      "schema": "market_intel",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "app_version": {
+          "name": "app_version",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "schema_fingerprint": {
+          "name": "schema_fingerprint",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "schema_ok": {
+          "name": "schema_ok",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "outbox_size": {
+          "name": "outbox_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_heartbeat_at": {
+          "name": "last_heartbeat_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_sync_at": {
+          "name": "last_sync_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paused": {
+          "name": "paused",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "status": {
+          "name": "status",
+          "type": "device_status",
+          "typeSchema": "market_intel",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "collector_device_token_hash_unique": {
+          "name": "collector_device_token_hash_unique",
+          "columns": [
+            "token_hash"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "market_intel.commodity": {
+      "name": "commodity",
+      "schema": "market_intel",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "varieties": {
+          "name": "varieties",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "synonyms": {
+          "name": "synonyms",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "commodity_slug_unique": {
+          "name": "commodity_slug_unique",
+          "columns": [
+            "slug"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "market_intel.content_cluster": {
+      "name": "content_cluster",
+      "schema": "market_intel",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "canonical_message_id": {
+          "name": "canonical_message_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "group_count": {
+          "name": "group_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "first_seen_at": {
+          "name": "first_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "content_cluster_canonical_message_id_wa_message_id_fk": {
+          "name": "content_cluster_canonical_message_id_wa_message_id_fk",
+          "tableFrom": "content_cluster",
+          "columnsFrom": [
+            "canonical_message_id"
+          ],
+          "tableTo": "wa_message",
+          "schemaTo": "market_intel",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "content_cluster_content_hash_unique": {
+          "name": "content_cluster_content_hash_unique",
+          "columns": [
+            "content_hash"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "market_intel.daily_brief": {
+      "name": "daily_brief",
+      "schema": "market_intel",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "date": {
+          "name": "date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generated_at": {
+          "name": "generated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delivered_at": {
+          "name": "delivered_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "daily_brief_date_unique": {
+          "name": "daily_brief_date_unique",
+          "columns": [
+            "date"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "market_intel.daily_price": {
+      "name": "daily_price",
+      "schema": "market_intel",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "commodity_id": {
+          "name": "commodity_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "market_id": {
+          "name": "market_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "date": {
+          "name": "date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "median_modal": {
+          "name": "median_modal",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "min": {
+          "name": "min",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max": {
+          "name": "max",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "arrivals_quintal": {
+          "name": "arrivals_quintal",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_count": {
+          "name": "source_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "group_count": {
+          "name": "group_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quality_flag": {
+          "name": "quality_flag",
+          "type": "quality_flag",
+          "typeSchema": "market_intel",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "daily_price_cmd_uq": {
+          "name": "daily_price_cmd_uq",
+          "columns": [
+            {
+              "expression": "commodity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "market_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "daily_price_commodity_id_commodity_id_fk": {
+          "name": "daily_price_commodity_id_commodity_id_fk",
+          "tableFrom": "daily_price",
+          "columnsFrom": [
+            "commodity_id"
+          ],
+          "tableTo": "commodity",
+          "schemaTo": "market_intel",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "daily_price_market_id_market_id_fk": {
+          "name": "daily_price_market_id_market_id_fk",
+          "tableFrom": "daily_price",
+          "columnsFrom": [
+            "market_id"
+          ],
+          "tableTo": "market",
+          "schemaTo": "market_intel",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "market_intel.extraction_event": {
+      "name": "extraction_event",
+      "schema": "market_intel",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "observation_id": {
+          "name": "observation_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action": {
+          "name": "action",
+          "type": "extraction_action",
+          "typeSchema": "market_intel",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor": {
+          "name": "actor",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "before": {
+          "name": "before",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "after": {
+          "name": "after",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "extraction_event_observation_idx": {
+          "name": "extraction_event_observation_idx",
+          "columns": [
+            {
+              "expression": "observation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "extraction_event_observation_id_price_observation_id_fk": {
+          "name": "extraction_event_observation_id_price_observation_id_fk",
+          "tableFrom": "extraction_event",
+          "columnsFrom": [
+            "observation_id"
+          ],
+          "tableTo": "price_observation",
+          "schemaTo": "market_intel",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "market_intel.insight": {
+      "name": "insight",
+      "schema": "market_intel",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "date": {
+          "name": "date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "insight_type",
+          "typeSchema": "market_intel",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "commodity_id": {
+          "name": "commodity_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "market_id": {
+          "name": "market_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "severity": {
+          "name": "severity",
+          "type": "severity",
+          "typeSchema": "market_intel",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "varchar(256)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "detail": {
+          "name": "detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "insight_date_type_idx": {
+          "name": "insight_date_type_idx",
+          "columns": [
+            {
+              "expression": "date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "insight_commodity_id_commodity_id_fk": {
+          "name": "insight_commodity_id_commodity_id_fk",
+          "tableFrom": "insight",
+          "columnsFrom": [
+            "commodity_id"
+          ],
+          "tableTo": "commodity",
+          "schemaTo": "market_intel",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "insight_market_id_market_id_fk": {
+          "name": "insight_market_id_market_id_fk",
+          "tableFrom": "insight",
+          "columnsFrom": [
+            "market_id"
+          ],
+          "tableTo": "market",
+          "schemaTo": "market_intel",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "market_intel.market": {
+      "name": "market",
+      "schema": "market_intel",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "district": {
+          "name": "district",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "state": {
+          "name": "state",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "aliases": {
+          "name": "aliases",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "lat": {
+          "name": "lat",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lng": {
+          "name": "lng",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "market_slug_unique": {
+          "name": "market_slug_unique",
+          "columns": [
+            "slug"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "market_intel.message_label": {
+      "name": "message_label",
+      "schema": "market_intel",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "message_label_value",
+          "typeSchema": "market_intel",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "model_version": {
+          "name": "model_version",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "message_label_message_idx": {
+          "name": "message_label_message_idx",
+          "columns": [
+            {
+              "expression": "message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "message_label_message_id_wa_message_id_fk": {
+          "name": "message_label_message_id_wa_message_id_fk",
+          "tableFrom": "message_label",
+          "columnsFrom": [
+            "message_id"
+          ],
+          "tableTo": "wa_message",
+          "schemaTo": "market_intel",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "market_intel.price_observation": {
+      "name": "price_observation",
+      "schema": "market_intel",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "commodity_id": {
+          "name": "commodity_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "variety": {
+          "name": "variety",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "market_id": {
+          "name": "market_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "obs_date": {
+          "name": "obs_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "min_raw": {
+          "name": "min_raw",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_raw": {
+          "name": "max_raw",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "modal_raw": {
+          "name": "modal_raw",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "unit_id": {
+          "name": "unit_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "min_per_quintal": {
+          "name": "min_per_quintal",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_per_quintal": {
+          "name": "max_per_quintal",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "modal_per_quintal": {
+          "name": "modal_per_quintal",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "arrivals_quintal": {
+          "name": "arrivals_quintal",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "observation_status",
+          "typeSchema": "market_intel",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'auto'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "price_observation_cmd_idx": {
+          "name": "price_observation_cmd_idx",
+          "columns": [
+            {
+              "expression": "commodity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "market_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "obs_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "price_observation_message_idx": {
+          "name": "price_observation_message_idx",
+          "columns": [
+            {
+              "expression": "message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "price_observation_status_idx": {
+          "name": "price_observation_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "price_observation_message_id_wa_message_id_fk": {
+          "name": "price_observation_message_id_wa_message_id_fk",
+          "tableFrom": "price_observation",
+          "columnsFrom": [
+            "message_id"
+          ],
+          "tableTo": "wa_message",
+          "schemaTo": "market_intel",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "price_observation_commodity_id_commodity_id_fk": {
+          "name": "price_observation_commodity_id_commodity_id_fk",
+          "tableFrom": "price_observation",
+          "columnsFrom": [
+            "commodity_id"
+          ],
+          "tableTo": "commodity",
+          "schemaTo": "market_intel",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "price_observation_market_id_market_id_fk": {
+          "name": "price_observation_market_id_market_id_fk",
+          "tableFrom": "price_observation",
+          "columnsFrom": [
+            "market_id"
+          ],
+          "tableTo": "market",
+          "schemaTo": "market_intel",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "price_observation_unit_id_unit_id_fk": {
+          "name": "price_observation_unit_id_unit_id_fk",
+          "tableFrom": "price_observation",
+          "columnsFrom": [
+            "unit_id"
+          ],
+          "tableTo": "unit",
+          "schemaTo": "market_intel",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "market_intel.unit": {
+      "name": "unit",
+      "schema": "market_intel",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "factor_to_quintal": {
+          "name": "factor_to_quintal",
+          "type": "double precision",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "aliases": {
+          "name": "aliases",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "unit_code_unique": {
+          "name": "unit_code_unique",
+          "columns": [
+            "code"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "market_intel.wa_group": {
+      "name": "wa_group",
+      "schema": "market_intel",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "jid": {
+          "name": "jid",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "varchar(256)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "member_count": {
+          "name": "member_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_watched": {
+          "name": "is_watched",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "region_tag": {
+          "name": "region_tag",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "primary_commodities": {
+          "name": "primary_commodities",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "last_message_at": {
+          "name": "last_message_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "wa_group_jid_unique": {
+          "name": "wa_group_jid_unique",
+          "columns": [
+            "jid"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "market_intel.wa_media": {
+      "name": "wa_media",
+      "schema": "market_intel",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gcs_path": {
+          "name": "gcs_path",
+          "type": "varchar(512)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mime": {
+          "name": "mime",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "size_bytes": {
+          "name": "size_bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uploaded": {
+          "name": "uploaded",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "ocr_status": {
+          "name": "ocr_status",
+          "type": "ocr_status",
+          "typeSchema": "market_intel",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "wa_media_message_idx": {
+          "name": "wa_media_message_idx",
+          "columns": [
+            {
+              "expression": "message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "wa_media_sha256_idx": {
+          "name": "wa_media_sha256_idx",
+          "columns": [
+            {
+              "expression": "sha256",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "wa_media_message_id_wa_message_id_fk": {
+          "name": "wa_media_message_id_wa_message_id_fk",
+          "tableFrom": "wa_media",
+          "columnsFrom": [
+            "message_id"
+          ],
+          "tableTo": "wa_message",
+          "schemaTo": "market_intel",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "market_intel.wa_message": {
+      "name": "wa_message",
+      "schema": "market_intel",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "group_id": {
+          "name": "group_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "device_id": {
+          "name": "device_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stanza_id": {
+          "name": "stanza_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sender_hash": {
+          "name": "sender_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sender_name": {
+          "name": "sender_name",
+          "type": "varchar(256)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "type": {
+          "name": "type",
+          "type": "message_type",
+          "typeSchema": "market_intel",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "quoted_stanza_id": {
+          "name": "quoted_stanza_id",
+          "type": "varchar(128)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_forwarded": {
+          "name": "is_forwarded",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cluster_id": {
+          "name": "cluster_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ingested_at": {
+          "name": "ingested_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "wa_message_group_stanza_uq": {
+          "name": "wa_message_group_stanza_uq",
+          "columns": [
+            {
+              "expression": "group_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "stanza_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "wa_message_group_sent_idx": {
+          "name": "wa_message_group_sent_idx",
+          "columns": [
+            {
+              "expression": "group_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sent_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        },
+        "wa_message_content_hash_idx": {
+          "name": "wa_message_content_hash_idx",
+          "columns": [
+            {
+              "expression": "content_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "concurrently": false
+        }
+      },
+      "foreignKeys": {
+        "wa_message_group_id_wa_group_id_fk": {
+          "name": "wa_message_group_id_wa_group_id_fk",
+          "tableFrom": "wa_message",
+          "columnsFrom": [
+            "group_id"
+          ],
+          "tableTo": "wa_group",
+          "schemaTo": "market_intel",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "wa_message_device_id_collector_device_id_fk": {
+          "name": "wa_message_device_id_collector_device_id_fk",
+          "tableFrom": "wa_message",
+          "columnsFrom": [
+            "device_id"
+          ],
+          "tableTo": "collector_device",
+          "schemaTo": "market_intel",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        },
+        "wa_message_cluster_id_content_cluster_id_fk": {
+          "name": "wa_message_cluster_id_content_cluster_id_fk",
+          "tableFrom": "wa_message",
+          "columnsFrom": [
+            "cluster_id"
+          ],
+          "tableTo": "content_cluster",
+          "schemaTo": "market_intel",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "market_intel.device_status": {
+      "name": "device_status",
+      "schema": "market_intel",
+      "values": [
+        "active",
+        "paused",
+        "silent",
+        "schema_mismatch",
+        "revoked"
+      ]
+    },
+    "market_intel.extraction_action": {
+      "name": "extraction_action",
+      "schema": "market_intel",
+      "values": [
+        "extracted",
+        "approved",
+        "edited",
+        "rejected"
+      ]
+    },
+    "market_intel.insight_type": {
+      "name": "insight_type",
+      "schema": "market_intel",
+      "values": [
+        "price_move",
+        "spread",
+        "arrival_spike",
+        "conflict",
+        "news"
+      ]
+    },
+    "market_intel.message_label_value": {
+      "name": "message_label_value",
+      "schema": "market_intel",
+      "values": [
+        "price",
+        "arrivals",
+        "news",
+        "advisory",
+        "noise"
+      ]
+    },
+    "market_intel.message_type": {
+      "name": "message_type",
+      "schema": "market_intel",
+      "values": [
+        "text",
+        "image",
+        "document",
+        "audio",
+        "video",
+        "sticker",
+        "location",
+        "contact",
+        "system",
+        "other"
+      ]
+    },
+    "market_intel.observation_status": {
+      "name": "observation_status",
+      "schema": "market_intel",
+      "values": [
+        "auto",
+        "needs_review",
+        "approved",
+        "rejected"
+      ]
+    },
+    "market_intel.ocr_status": {
+      "name": "ocr_status",
+      "schema": "market_intel",
+      "values": [
+        "pending",
+        "done",
+        "failed",
+        "skipped"
+      ]
+    },
+    "market_intel.quality_flag": {
+      "name": "quality_flag",
+      "schema": "market_intel",
+      "values": [
+        "ok",
+        "single_source",
+        "conflicting",
+        "out_of_bounds"
+      ]
+    },
+    "market_intel.severity": {
+      "name": "severity",
+      "schema": "market_intel",
+      "values": [
+        "info",
+        "notable",
+        "high"
+      ]
+    }
+  },
+  "schemas": {
+    "market_intel": "market_intel"
+  },
+  "views": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

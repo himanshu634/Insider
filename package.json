@@ -1,0 +1,16 @@
+{
+  "name": "insider",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.2.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "bin/insider dev",
+    "gen": "pnpm --filter @insider/contracts gen",
+    "check": "pnpm -r --if-present check",
+    "build": "pnpm -r --if-present build",
+    "test": "pnpm -r --if-present test"
+  }
+}

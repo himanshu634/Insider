@@ -1,0 +1,10 @@
+packages:
+  - apps/*
+  - services/*
+  - packages/*
+  - tools/*
+
+allowBuilds:
+  electron: true
+  esbuild: true
+  msgpackr-extract: true

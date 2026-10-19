@@ -1,0 +1,27 @@
+# OS / editors
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local dev state (Postgres cluster, Redis, logs, fixture DBs)
+.dev/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+.pnpm-store/
+.svelte-kit/
+build/
+dist/
+test-results/
+playwright-report/
+
+# Electron collector build output
+apps/collector/dist/
+apps/collector/out/
+services/api/dist/
