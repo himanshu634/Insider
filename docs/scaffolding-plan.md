@@ -160,10 +160,10 @@ Without Redis installed, `dev` sets `QUEUE_INLINE=true`: jobs run inside the API
 - [x] Monorepo: pnpm workspace, shared `tsconfig.base.json`, `.env.example`, CODEOWNERS (owner placeholder)
 - [x] `packages/contracts/openapi.yaml` for every endpoint; generated TS types; CI drift check
 - [x] API: Drizzle schema in `market_intel`, initial + seed migrations, every route, device-token auth, dev user-auth stub, idempotent ingest, BullMQ/inline jobs, IST schedules, PGlite tests
-- [ ] Web: SPA shell, every route with empty states, Mandi Ledger design system + `/design` style guide, Gujarati/English labels, IST/₹ formatters
-- [ ] Collector: core (snapshot, reader, schema guard, outbox, sync engine) with fixture tests; Electron tray shell
-- [ ] Tools: Phase 0 probe; export importer with tests
-- [ ] Infra: GCS bucket script, systemd units, Nginx config (written, run by a human)
+- [x] Web: SPA shell, every route with empty states, Mandi Ledger design system + `/design` style guide, Gujarati/English labels, IST/₹ formatters
+- [x] Collector: core (snapshot, reader, schema guard, outbox, sync engine) with fixture tests; Electron tray shell
+- [x] Tools: Phase 0 probe; export importer with tests
+- [x] Infra: GCS bucket script, systemd units, Nginx config (written, run by a human)
 - [x] `bin/insider` with `dev` and one subcommand per service
 - [x] CI: one workflow, path-filtered jobs for contracts, API (with real Postgres), web, collector (macOS runner), tools
 
