@@ -227,19 +227,24 @@ export class MediaQueue {
   }
 
   /**
-   * Try again at `nextAttemptAt`, counting an attempt. `restart` forgets the server media id so the
-   * next attempt asks for a fresh upload URL.
+   * Try again at `nextAttemptAt`. `countAttempt: false` for server errors that say nothing about
+   * this file. `restart` forgets the server media id so the next attempt asks for a fresh URL.
    */
-  retryLater(id: number, error: string, nextAttemptAt: Date, restart = false): void {
+  retryLater(
+    id: number,
+    error: string,
+    nextAttemptAt: Date,
+    { restart = false, countAttempt = true }: { restart?: boolean; countAttempt?: boolean } = {},
+  ): void {
     this.db
       .prepare(
         `UPDATE media_outbox
-            SET attempts = attempts + 1, last_error = ?, next_attempt_at = ?,
+            SET attempts = attempts + ?, last_error = ?, next_attempt_at = ?,
                 put_done = CASE WHEN ? THEN 0 ELSE put_done END,
                 media_id = CASE WHEN ? THEN NULL ELSE media_id END
           WHERE id = ?`,
       )
-      .run(error, nextAttemptAt.toISOString(), restart ? 1 : 0, restart ? 1 : 0, id);
+      .run(countAttempt ? 1 : 0, error, nextAttemptAt.toISOString(), restart ? 1 : 0, restart ? 1 : 0, id);
   }
 
   /** Uploaded and completed. */

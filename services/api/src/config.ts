@@ -13,7 +13,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     redisUrl: env.REDIS_URL ?? 'redis://localhost:6380',
     /** Run pipeline jobs inline instead of through BullMQ (tests, or dev without Redis). */
     queueInline: bool(env.QUEUE_INLINE),
-    senderHmacKey: env.SENDER_HMAC_KEY ?? 'change-me',
+    // Empty counts as unset: GET /v1/devices/config must send a non-empty key.
+    senderHmacKey: env.SENDER_HMAC_KEY || 'change-me',
     /** Dev only: user endpoints accept any caller. Never enable in production. */
     authDevBypass: bool(env.AUTH_DEV_BYPASS),
     gcsMediaBucket: env.GCS_MEDIA_BUCKET ?? 'insider-media-dev',

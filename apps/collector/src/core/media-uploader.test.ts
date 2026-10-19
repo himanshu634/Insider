@@ -203,14 +203,32 @@ describe('MediaUploader', () => {
     expect(api.requests).toHaveLength(1);
   });
 
+  it('backs off a file the server keeps failing on and uploads the others', async () => {
+    writeFile('a.jpg', 'a');
+    writeFile('b.jpg', 'b');
+    addMedia('s1', 'a.jpg', 'image', 1);
+    addMedia('s2', 'b.jpg', 'image', 2);
+    const create = api.createMediaUploadUrl.bind(api);
+    api.createMediaUploadUrl = async (req) => {
+      if (req.stanza_id === 's1') throw new ApiError('POST /v1/ingest/media/upload-url → 503', 503, true);
+      return create(req);
+    };
+    const first = await uploader().run();
+    expect(first).toMatchObject({ uploaded: 1, error: expect.stringMatching(/503/) });
+    expect(api.requests.map((r) => r.stanza_id)).toEqual(['s2']);
+    expect(outbox.media.uploads()).toEqual([expect.objectContaining({ stanzaId: 's1', attempts: 0 })]);
+    expect((await uploader().run()).error).toBeNull(); // s1 is not due yet
+  });
+
   it('after a successful PUT, retries only the complete call', async () => {
     writeFile('a.jpg', 'x');
     addMedia('s1', 'a.jpg');
     api.completeError = new ApiError('POST /v1/ingest/media/complete → 503', 503, true);
     expect((await uploader().run()).error).toMatch(/503/);
-    expect(outbox.media.uploads()[0]).toMatchObject({ putDone: true, mediaId: 101 });
+    expect(outbox.media.uploads()[0]).toMatchObject({ putDone: true, mediaId: 101, attempts: 0 });
 
     api.completeError = null;
+    clock = new Date(clock.getTime() + 60_000);
     const res = await uploader().run();
     expect(res.uploaded).toBe(1);
     expect(api.requests).toHaveLength(1);

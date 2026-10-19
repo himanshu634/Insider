@@ -37,6 +37,7 @@ class FakeApi implements CollectorApi {
   };
   mediaRequests: MediaUploadUrlRequest[] = [];
   completed: number[] = [];
+  failMedia = false;
   batches: IngestMessage[][] = [];
   heartbeats: HeartbeatRequest[] = [];
   catalogs: CatalogGroup[][] = [];
@@ -77,6 +78,7 @@ class FakeApi implements CollectorApi {
   }
 
   async createMediaUploadUrl(req: MediaUploadUrlRequest): Promise<MediaUploadUrlResponse> {
+    if (this.failMedia) throw new ApiError('POST /v1/ingest/media/upload-url → 503', 503, true);
     if (!this.seen.has(`${req.group_jid}/${req.stanza_id}`)) {
       throw new ApiError('POST /v1/ingest/media/upload-url → 404', 404, false);
     }
@@ -424,6 +426,15 @@ describe('SyncEngine media', () => {
     expect(status.mediaWaiting).toBe(0);
     expect(api.mediaRequests).toHaveLength(0);
     expect(outbox.media.failed()[0]).toMatchObject({ stanzaId: IMAGE_STANZA, reason: 'message rejected' });
+  });
+
+  it('shows a media error without holding back the last sync time', async () => {
+    writeMediaFile(IMAGE_PATH, Buffer.from('jpeg'));
+    api.failMedia = true;
+    const status = await engine().tick();
+    expect(status.error).toMatch(/^media: .*503/);
+    expect(status.lastSyncAt).not.toBeNull();
+    expect(status.mediaWaiting).toBe(1);
   });
 
   it('does not upload media while the messages cannot be uploaded', async () => {

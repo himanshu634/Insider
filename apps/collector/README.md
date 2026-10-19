@@ -57,7 +57,8 @@ unknown messages): sha256 of the file → `POST /v1/ingest/media/upload-url` →
 (no `Authorization` header; `Content-Type` is the signed MIME) → `POST /v1/ingest/media/complete`.
 The PUT is skipped when the server answers `already_uploaded`, and for the dev URL
 `http://localhost:<port>/dev-media/…` that the API returns without GCP credentials. Progress is kept
-per step, so offline or server errors retry only what is left on a later tick. At most 20 files go
+per step, so offline or server errors retry only what is left on a later tick; a 5xx backs off
+that one file so it never blocks the others, and media errors do not hold back *Last sync*. At most 20 files go
 per tick. Rejected messages, files over 50 MB, deleted files and requests the server calls invalid
 end in `media_failed`.
 

@@ -128,6 +128,8 @@ export class SyncEngine {
   private async runTick(): Promise<SyncStatus> {
     const { api, outbox } = this.opts;
     const errors: string[] = [];
+    // Shown in the status, but media trouble does not hold back "last sync" (messages flowed).
+    let mediaError: string | null = null;
     this.state.syncing = true;
     this.emit();
 
@@ -167,7 +169,7 @@ export class SyncEngine {
         }
         if (flushed) {
           const media = await this.media.run();
-          if (media.error) errors.push(`media: ${media.error}`);
+          if (media.error) mediaError = `media: ${media.error}`;
         }
       }
     } finally {
@@ -175,7 +177,8 @@ export class SyncEngine {
       this.state.syncing = false;
       this.state.lastAttemptAt = now.toISOString();
       if (errors.length === 0) this.state.lastSyncAt = now.toISOString();
-      this.state.error = errors.length > 0 ? errors.join('; ') : null;
+      const shown = mediaError ? [...errors, mediaError] : errors;
+      this.state.error = shown.length > 0 ? shown.join('; ') : null;
       this.state.outboxSize = outbox.size();
       this.state.mediaWaiting = outbox.media.waitingCount();
       this.state.sentToday = outbox.sentOn(localDay(now));

@@ -197,9 +197,12 @@ export class MediaUploader {
     if (item.attempts + 1 >= MAX_MEDIA_ATTEMPTS) {
       return this.giveUp(item, `gave up after ${MAX_MEDIA_ATTEMPTS} attempts: ${error}`, result);
     }
-    const delay = Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** item.attempts);
-    this.opts.queue.retryLater(item.id, error, new Date(this.now().getTime() + delay), restart);
+    this.opts.queue.retryLater(item.id, error, this.backoffFrom(item.attempts), { restart });
     return 'next';
+  }
+
+  private backoffFrom(attempts: number): Date {
+    return new Date(this.now().getTime() + Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** attempts));
   }
 
   private handleError(item: MediaUpload, step: Step, err: unknown, result: MediaRunResult): Outcome {
@@ -209,10 +212,17 @@ export class MediaUploader {
     }
     if (!(err instanceof ApiError)) return this.later(item, message(err), result);
 
-    // Offline, timeouts, 429, 5xx: keep the row as it is and try the whole queue next tick.
-    if (err.retryable) {
+    // Offline, timeouts, 429: keep the row as it is and try the whole queue next tick.
+    if (err.retryable && (err.status === 0 || err.status === 408 || err.status === 429)) {
       result.error = err.message;
       return 'stop';
+    }
+    // 5xx: may be this file only. Back off this row (not counted as an attempt) and go on, so one
+    // file the server keeps failing on never blocks the others.
+    if (err.retryable) {
+      result.error = err.message;
+      this.opts.queue.retryLater(item.id, err.message, this.backoffFrom(item.attempts), { countAttempt: false });
+      return 'next';
     }
     // A revoked or wrong device token affects every upload; nothing to give up on.
     if (step !== 'put' && (err.status === 401 || err.status === 403)) {
