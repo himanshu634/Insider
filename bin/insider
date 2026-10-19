@@ -34,6 +34,8 @@ export VITE_API_BASE_URL="${VITE_API_BASE_URL:-http://localhost:$API_PORT}"
 export INSIDER_API_URL="${INSIDER_API_URL:-http://localhost:$API_PORT}"
 export INSIDER_DEVICE_TOKEN="${INSIDER_DEVICE_TOKEN:-dev-device-token}"
 export INSIDER_WA_DB="${INSIDER_WA_DB:-$DEV/fixtures/ChatStorage.sqlite}"
+# .env may give a repo-relative path; the collector runs from apps/collector, so pin it here.
+[[ "$INSIDER_WA_DB" == /* ]] || INSIDER_WA_DB="$ROOT/$INSIDER_WA_DB"
 export INSIDER_WEB_URL="${INSIDER_WEB_URL:-http://localhost:$WEB_PORT}"
 
 # --- helpers -------------------------------------------------------------------------------

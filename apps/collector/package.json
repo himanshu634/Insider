@@ -1,0 +1,23 @@
+{
+  "name": "@insider/collector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Insider Collector — macOS menu-bar app that reads a copy of WhatsApp Desktop's local database and uploads new group messages",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json && electron .",
+    "check": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "@insider/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "electron": "^38.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
