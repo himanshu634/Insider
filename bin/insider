@@ -108,7 +108,7 @@ cmd_seed() {
 }
 
 cmd_api() {
-  bold "API on http://localhost:$API_PORT (docs: /docs)"
+  bold "API on http://localhost:$API_PORT"
   exec pnpm --filter @insider/api dev
 }
 
@@ -188,7 +188,7 @@ cmd_dev() {
     start_bg collector "$0" collector
   fi
 
-  bold "Insider dev is up — web http://localhost:$WEB_PORT · API http://localhost:$API_PORT/docs · Ctrl-C to stop"
+  bold "Insider dev is up — web http://localhost:$WEB_PORT · API http://localhost:$API_PORT/healthz · Ctrl-C to stop"
   wait
 }
 

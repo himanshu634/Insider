@@ -20,7 +20,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     gcpProject: env.GCP_PROJECT || undefined,
     mediaUploadUrlTtlSeconds: Number(env.MEDIA_UPLOAD_URL_TTL_SECONDS ?? 900),
     defaultSyncIntervalSeconds: 90,
-    corsOrigins: (env.CORS_ORIGINS ?? 'http://localhost:5173').split(','),
+    corsOrigins: (env.CORS_ORIGINS ?? 'http://localhost:5173,http://localhost:4173').split(','),
   };
 }
 

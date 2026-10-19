@@ -1,0 +1,48 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/forms';
+@import '../lib/ui/tokens.css';
+
+@layer base {
+	html {
+		background: var(--bg);
+		color: var(--ink);
+		-webkit-text-size-adjust: 100%;
+		font-feature-settings: 'cv11', 'ss01';
+	}
+
+	body {
+		background: var(--bg);
+		color: var(--ink);
+		font-family: var(--font-sans);
+		font-size: var(--text-base);
+		line-height: var(--text-base--line-height);
+		min-height: 100dvh;
+		-webkit-font-smoothing: antialiased;
+	}
+
+	:focus-visible {
+		outline: 2px solid var(--focus);
+		outline-offset: 2px;
+	}
+
+	/* Gujarati wraps between words, never mid-word. */
+	:lang(gu) {
+		word-break: keep-all;
+		overflow-wrap: normal;
+		hyphens: none;
+	}
+
+	a,
+	button {
+		touch-action: manipulation;
+	}
+}
+
+@layer components {
+	/* Every price and count: tabular lining numerals, right-aligned, no wrapping. */
+	.num {
+		font-variant-numeric: tabular-nums lining-nums;
+		text-align: right;
+		white-space: nowrap;
+	}
+}
