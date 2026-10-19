@@ -1,5 +1,6 @@
-import type { CollectorApi } from './api-client.js';
+import type { CollectorApi, PutFile } from './api-client.js';
 import { isPermissionError } from './disk-access.js';
+import { MediaUploader, mediaRootsFor } from './media-uploader.js';
 import { localDay, type Outbox } from './outbox.js';
 import { DEFAULT_READ_LIMIT, WhatsAppReader } from './reader.js';
 import { checkSchema } from './schema-guard.js';
@@ -13,6 +14,8 @@ export interface SyncStatus {
   lastAttemptAt: string | null;
   sentToday: number;
   outboxSize: number;
+  /** Media files waiting for WhatsApp to download them, or for upload. */
+  mediaWaiting: number;
   /** null until the first snapshot has been checked. */
   schemaOk: boolean | null;
   schemaFingerprint: string | null;
@@ -25,6 +28,10 @@ export interface SyncStatus {
 
 export interface SyncEngineOptions {
   waDbPath: string;
+  /**
+   * Fallback for dev (SENDER_HMAC_KEY). The key from the server's device config wins; without
+   * either, the engine reads no messages.
+   */
   senderHmacKey: string | undefined;
   api: CollectorApi;
   outbox: Outbox;
@@ -33,6 +40,12 @@ export interface SyncEngineOptions {
   appVersion: string;
   /** Max WhatsApp rows read per tick; the rest follow on the next tick. */
   readLimit?: number;
+  /** Folders WhatsApp media paths are relative to. Default: derived from waDbPath. */
+  mediaRoots?: readonly string[];
+  /** Media uploads per tick (the rest follow on later ticks). */
+  mediaPerTick?: number;
+  /** PUT to a signed URL (tests inject a fake). */
+  putFile?: PutFile;
   selfJid?: string;
   now?: () => Date;
   onStatus?: (status: SyncStatus) => void;
@@ -47,8 +60,9 @@ function describeError(err: unknown, waDbPath: string): string {
 }
 
 /**
- * One tick: device config → snapshot → schema guard → read new messages of watched groups →
- * outbox (+ checkpoints, one transaction) → upload in batches → delete the snapshot.
+ * One tick: device config → snapshot → schema guard → read new messages of watched groups and
+ * re-check media still waiting for its file → outbox (+ checkpoints + pending media, one
+ * transaction) → delete the snapshot → upload messages in batches → upload media.
  * Ticks never overlap; calling tick() while one runs returns the running tick.
  */
 export class SyncEngine {
@@ -56,14 +70,24 @@ export class SyncEngine {
   private deviceConfig: DeviceConfig | null = null;
   private readonly now: () => Date;
   private readonly state: SyncStatus;
+  private readonly media: MediaUploader;
 
   constructor(private readonly opts: SyncEngineOptions) {
     this.now = opts.now ?? (() => new Date());
+    this.media = new MediaUploader({
+      api: opts.api,
+      queue: opts.outbox.media,
+      mediaRoots: opts.mediaRoots ?? mediaRootsFor(opts.waDbPath),
+      now: this.now,
+      ...(opts.putFile ? { putFile: opts.putFile } : {}),
+      ...(opts.mediaPerTick ? { maxPerRun: opts.mediaPerTick } : {}),
+    });
     this.state = {
       lastSyncAt: null,
       lastAttemptAt: null,
       sentToday: opts.outbox.sentOn(localDay(this.now())),
       outboxSize: opts.outbox.size(),
+      mediaWaiting: opts.outbox.media.waitingCount(),
       schemaOk: null,
       schemaFingerprint: null,
       missingColumns: [],
@@ -92,6 +116,11 @@ export class SyncEngine {
     return this.running;
   }
 
+  /** Resolves when no tick is running (to swap engines without two ticks at once). */
+  async whenIdle(): Promise<void> {
+    await this.running?.catch(() => undefined);
+  }
+
   private emit(): void {
     this.opts.onStatus?.(this.status);
   }
@@ -116,11 +145,12 @@ export class SyncEngine {
       this.state.watchedGroups = watched.length;
 
       if (config && !config.paused) {
-        if (!this.opts.senderHmacKey) {
-          errors.push('SENDER_HMAC_KEY is not set; not reading messages');
-        } else if (watched.length > 0) {
+        const key = config.sender_hmac_key || this.opts.senderHmacKey;
+        if (!key) {
+          errors.push('No sender HMAC key from the server (or SENDER_HMAC_KEY); not reading messages');
+        } else if (watched.length > 0 || outbox.media.pendingItemPksWithoutPath().length > 0) {
           try {
-            await this.collect(watched, this.opts.senderHmacKey);
+            await this.collect(watched, key);
           } catch (err) {
             errors.push(describeError(err, this.opts.waDbPath));
           }
@@ -128,10 +158,16 @@ export class SyncEngine {
       }
 
       if (!config?.paused) {
+        let flushed = false;
         try {
           await this.flush();
+          flushed = true;
         } catch (err) {
           errors.push(`upload: ${describeError(err, this.opts.waDbPath)}`);
+        }
+        if (flushed) {
+          const media = await this.media.run();
+          if (media.error) errors.push(`media: ${media.error}`);
         }
       }
     } finally {
@@ -141,13 +177,17 @@ export class SyncEngine {
       if (errors.length === 0) this.state.lastSyncAt = now.toISOString();
       this.state.error = errors.length > 0 ? errors.join('; ') : null;
       this.state.outboxSize = outbox.size();
+      this.state.mediaWaiting = outbox.media.waitingCount();
       this.state.sentToday = outbox.sentOn(localDay(now));
       this.emit();
     }
     return this.status;
   }
 
-  /** Snapshot → schema guard → read → outbox. The snapshot is always deleted. */
+  /**
+   * Snapshot → schema guard → read → outbox, and re-read ZMEDIALOCALPATH for media whose file
+   * WhatsApp had not downloaded yet. The snapshot is always deleted.
+   */
   private async collect(watched: string[], senderHmacKey: string): Promise<void> {
     const { outbox } = this.opts;
     const snapshot = await createSnapshot(this.opts.waDbPath, this.opts.workDir);
@@ -164,12 +204,16 @@ export class SyncEngine {
       if (!schema.ok) {
         throw new Error(`WhatsApp schema mismatch; missing ${schema.missing.join(', ')}`);
       }
-      const read = reader.newMessages(
-        watched,
-        outbox.checkpoints(),
-        this.opts.readLimit ?? DEFAULT_READ_LIMIT,
-      );
-      outbox.enqueue(read.messages, read.checkpoints, this.now());
+      const paths = reader.mediaLocalPaths(outbox.media.pendingItemPksWithoutPath());
+      outbox.media.updatePendingPaths(paths, this.now());
+      if (watched.length > 0) {
+        const read = reader.newMessages(
+          watched,
+          outbox.checkpoints(),
+          this.opts.readLimit ?? DEFAULT_READ_LIMIT,
+        );
+        outbox.enqueue(read.messages, read.checkpoints, this.now());
+      }
     } finally {
       reader?.close();
       await snapshot.cleanup();

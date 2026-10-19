@@ -131,7 +131,7 @@ paths:
     get:
       tags: [devices]
       operationId: getDeviceConfig
-      summary: Watched groups, sync interval and paused flag for this device
+      summary: Watched groups, sync interval, paused flag and sender HMAC key for this device
       security: [{ deviceToken: [] }]
       responses:
         "200":
@@ -807,13 +807,19 @@ components:
 
     DeviceConfig:
       type: object
-      required: [watched_group_jids, sync_interval_seconds, paused]
+      required: [watched_group_jids, sync_interval_seconds, paused, sender_hmac_key]
       properties:
         watched_group_jids:
           type: array
           items: { type: string }
         sync_interval_seconds: { type: integer, default: 90 }
         paused: { type: boolean }
+        sender_hmac_key:
+          type: string
+          minLength: 1
+          description: >-
+            Key the collector uses to HMAC sender JIDs (same as the API's SENDER_HMAC_KEY).
+            Sent only to authenticated devices; the collector keeps it in memory.
 
     HeartbeatRequest:
       type: object

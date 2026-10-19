@@ -9,12 +9,16 @@ export const DEFAULT_WA_DB =
   '~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite';
 
 export interface CollectorConfig {
+  /** INSIDER_API_URL. A URL saved in the Connect window wins over it. */
   apiUrl: string;
   /** From env (dev). The packaged app keeps its token in a safeStorage file instead. */
   deviceToken: string | undefined;
   /** Absolute path of the WhatsApp database (or the dev fixture). Only ever snapshotted. */
   waDbPath: string;
-  /** Shared with the API (SENDER_HMAC_KEY). Without it the collector does not read messages. */
+  /**
+   * Dev fallback (SENDER_HMAC_KEY). The server sends its key in GET /v1/devices/config, and that
+   * key wins; with neither, the collector reads no messages.
+   */
   senderHmacKey: string | undefined;
   syncIntervalSeconds: number;
   webUrl: string;

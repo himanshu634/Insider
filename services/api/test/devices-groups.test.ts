@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { loadConfig } from '../src/config.js';
 import { collectorDevice } from '../src/db/schema.js';
 import { collectorWatchdog } from '../src/pipeline/tasks.js';
 import { setup } from './helpers.js';
@@ -27,7 +28,19 @@ describe('collector config, catalog and heartbeat', () => {
     expect((await patched.json()).is_watched).toBe(true);
 
     config = await (await t.request('/v1/devices/config')).json();
-    expect(config).toEqual({ watched_group_jids: [GROUP], sync_interval_seconds: 90, paused: false });
+    expect(config).toEqual({
+      watched_group_jids: [GROUP],
+      sync_interval_seconds: 90,
+      paused: false,
+      sender_hmac_key: loadConfig().senderHmacKey,
+    });
+  });
+
+  it('device config hands the sender HMAC key to the device, and only with a device token', async () => {
+    const config = await (await t.request('/v1/devices/config')).json();
+    expect(config.sender_hmac_key).toBe(loadConfig().senderHmacKey);
+    expect(config.sender_hmac_key.length).toBeGreaterThan(0);
+    expect((await t.request('/v1/devices/config', { device: false })).status).toBe(401);
   });
 
   it('heartbeat with a schema mismatch flags the device', async () => {

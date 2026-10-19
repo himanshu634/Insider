@@ -1,18 +1,22 @@
 /**
- * Insider Collector — Electron main process. Menu-bar only (no Dock icon, no windows).
- * All WhatsApp/outbox/API logic lives in ./core (plain Node, unit-tested); this file is UI glue.
+ * Insider Collector — Electron main process. Menu-bar only (no Dock icon); the one window is the
+ * Connect dialog. All WhatsApp/outbox/API logic lives in ./core (plain Node, unit-tested); this
+ * file is UI glue.
  */
 import { join } from 'node:path';
-import { app, dialog, Menu, nativeImage, shell, Tray } from 'electron';
-import type { MenuItemConstructorOptions } from 'electron';
+import { fileURLToPath } from 'node:url';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
+import type { IpcMainInvokeEvent, MenuItemConstructorOptions } from 'electron';
 import { ApiClient } from './core/api-client.js';
 import { loadConfig, MIN_SYNC_INTERVAL_SECONDS, type CollectorConfig } from './core/config.js';
-import { checkDbAccess, FULL_DISK_ACCESS_URL } from './core/disk-access.js';
+import { connectPageUrl } from './core/connect-page.js';
+import { normalizeConnection, readSettings, testConnection, writeSettings } from './core/connection.js';
+import { checkDbAccess, FULL_DISK_ACCESS_URL, type DbAccess } from './core/disk-access.js';
 import { Outbox } from './core/outbox.js';
 import { removeStaleSnapshots } from './core/snapshot.js';
 import { SyncEngine, type SyncStatus } from './core/sync-engine.js';
 import { trayIconPng } from './core/tray-icon.js';
-import { loadDeviceToken } from './token-store.js';
+import { loadDeviceToken, saveDeviceToken } from './token-store.js';
 
 const HEARTBEAT_MS = 5 * 60 * 1000;
 const CATALOG_MS = 60 * 60 * 1000;
@@ -21,11 +25,19 @@ let tray: Tray | null = null;
 let outbox: Outbox | null = null;
 let engine: SyncEngine | null = null;
 let config: CollectorConfig;
+/** API URL in use: the one saved by the Connect window, else INSIDER_API_URL, else the default. */
+let apiUrl = '';
+let deviceToken: string | undefined;
+let dbAccess: DbAccess = 'ok';
 let setupError: string | null = null;
+let connectWindow: BrowserWindow | null = null;
 let paused = false;
 let syncTimer: NodeJS.Timeout | null = null;
 const intervals: NodeJS.Timeout[] = [];
 let fdaDialogShown = false;
+
+const settingsPath = () => join(app.getPath('userData'), 'settings.json');
+const userAgent = () => `InsiderCollector/${app.getVersion()}`;
 
 function log(...args: unknown[]): void {
   console.log('[collector]', ...args);
@@ -66,8 +78,11 @@ function renderMenu(): void {
   const error = setupError ?? status?.error;
   if (error) items.push(info(`⚠ ${clip(error)}`));
 
+  if (status && status.mediaWaiting > 0) items.splice(4, 0, info(`Media: ${status.mediaWaiting} waiting`));
+
   items.push(
     { type: 'separator' },
+    { label: deviceToken ? 'Change connection…' : 'Connect…', click: () => openConnectWindow() },
     { label: 'Sync now', enabled: engine !== null && !status?.syncing, click: () => void syncNow() },
     {
       label: paused ? 'Resume syncing' : 'Pause syncing',
@@ -165,9 +180,144 @@ async function publishCatalog(): Promise<void> {
   }
 }
 
+function clearIntervals(): void {
+  for (const t of intervals.splice(0)) clearInterval(t);
+}
+
+/** Stop the running engine (waiting for its tick) so a new one can take over the outbox. */
+async function stopEngine(): Promise<void> {
+  const old = engine;
+  engine = null;
+  clearSyncTimer();
+  clearIntervals();
+  await old?.whenIdle();
+}
+
+function dbAccessError(): string | null {
+  return dbAccess === 'missing' ? `WhatsApp database not found at ${config.waDbPath}` : null;
+}
+
+let engineChain: Promise<void> = Promise.resolve();
+
+/** (Re)build the engine from the saved connection (or env in dev). Calls run one at a time. */
+function startEngine(): Promise<void> {
+  engineChain = engineChain.then(buildEngine, buildEngine);
+  return engineChain;
+}
+
+async function buildEngine(): Promise<void> {
+  await stopEngine();
+  apiUrl = (await readSettings(settingsPath())).apiUrl ?? config.apiUrl;
+  deviceToken = await loadDeviceToken(config.deviceToken);
+  setupError = dbAccessError();
+  if (!deviceToken || !outbox) {
+    // No token yet (first run of the packaged app): ask for one.
+    setupError = 'Not connected. Choose “Connect…” to enter the API URL and device token.';
+    renderMenu();
+    openConnectWindow();
+    return;
+  }
+
+  engine = new SyncEngine({
+    waDbPath: config.waDbPath,
+    // Dev fallback only: the server hands its key to the device in GET /v1/devices/config.
+    senderHmacKey: config.senderHmacKey,
+    api: new ApiClient({ baseUrl: apiUrl, deviceToken, userAgent: userAgent() }),
+    outbox,
+    workDir: join(app.getPath('userData'), 'snapshots'),
+    appVersion: app.getVersion(),
+    onStatus: () => renderMenu(),
+  });
+  log(`reading ${config.waDbPath} → ${apiUrl}`);
+  renderMenu();
+
+  await syncNow();
+  if (dbAccess !== 'denied') void publishCatalog();
+  void heartbeat();
+  intervals.push(setInterval(() => void heartbeat(), HEARTBEAT_MS));
+  intervals.push(setInterval(() => void publishCatalog(), CATALOG_MS));
+}
+
+function openConnectWindow(): void {
+  if (connectWindow) {
+    connectWindow.show();
+    connectWindow.focus();
+    app.focus({ steal: true });
+    return;
+  }
+  const win = new BrowserWindow({
+    width: 460,
+    height: 380,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    show: false,
+    title: 'Connect Insider Collector',
+    webPreferences: {
+      preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  win.removeMenu();
+  win.webContents.on('will-navigate', (event) => event.preventDefault());
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.once('ready-to-show', () => {
+    win.show();
+    app.focus({ steal: true }); // no Dock icon: without this the window can open behind others
+  });
+  win.on('closed', () => {
+    connectWindow = null;
+  });
+  connectWindow = win;
+  void win.loadURL(connectPageUrl());
+}
+
+function fromConnectWindow(event: IpcMainInvokeEvent): boolean {
+  return connectWindow !== null && event.sender === connectWindow.webContents;
+}
+
+function registerConnectIpc(): void {
+  ipcMain.handle('insider:connect-defaults', (event) => {
+    if (!fromConnectWindow(event)) return { apiUrl: '', connected: false };
+    return { apiUrl: apiUrl || config.apiUrl, connected: Boolean(deviceToken) };
+  });
+
+  ipcMain.handle('insider:connect-cancel', (event) => {
+    if (fromConnectWindow(event)) connectWindow?.close();
+  });
+
+  ipcMain.handle('insider:connect', async (event, input: unknown) => {
+    if (!fromConnectWindow(event)) return { ok: false, error: 'Not allowed' };
+    const raw = (input ?? {}) as { apiUrl?: unknown; deviceToken?: unknown };
+    // An empty token field keeps the stored token (when changing only the URL).
+    const typed = typeof raw.deviceToken === 'string' ? raw.deviceToken.trim() : '';
+    const checked = normalizeConnection({ apiUrl: raw.apiUrl, deviceToken: typed || deviceToken });
+    if (!checked.ok) return checked;
+
+    const test = await testConnection(checked.value, { userAgent: userAgent() });
+    if (!test.ok) return test;
+
+    try {
+      await saveDeviceToken(checked.value.deviceToken);
+      await writeSettings(settingsPath(), { apiUrl: checked.value.apiUrl });
+    } catch (err) {
+      log('could not save the connection:', err);
+      return { ok: false, error: 'Could not store the token in the Keychain' };
+    }
+    log(`connected to ${checked.value.apiUrl}`);
+    setTimeout(() => connectWindow?.close(), 600);
+    void startEngine().catch((err: unknown) => log('restart failed:', err));
+    return { ok: true };
+  });
+}
+
 async function start(): Promise<void> {
   app.dock?.hide();
   config = loadConfig();
+  registerConnectIpc();
 
   const icon = nativeImage.createFromBuffer(trayIconPng(32), { scaleFactor: 2 });
   icon.setTemplateImage(true);
@@ -175,42 +325,13 @@ async function start(): Promise<void> {
   renderMenu();
 
   const userData = app.getPath('userData');
-  const workDir = join(userData, 'snapshots');
-  await removeStaleSnapshots(workDir);
+  await removeStaleSnapshots(join(userData, 'snapshots'));
   outbox = Outbox.open(join(userData, 'outbox.sqlite'));
 
-  const access = await checkDbAccess(config.waDbPath);
-  if (access === 'denied') void showFullDiskAccessDialog();
-  if (access === 'missing') setupError = `WhatsApp database not found at ${config.waDbPath}`;
+  dbAccess = await checkDbAccess(config.waDbPath);
+  if (dbAccess === 'denied') void showFullDiskAccessDialog();
 
-  const token = await loadDeviceToken(config.deviceToken);
-  if (!token) {
-    setupError = 'No device token. Set INSIDER_DEVICE_TOKEN (onboarding UI comes later).';
-    renderMenu();
-    return;
-  }
-
-  engine = new SyncEngine({
-    waDbPath: config.waDbPath,
-    senderHmacKey: config.senderHmacKey,
-    api: new ApiClient({
-      baseUrl: config.apiUrl,
-      deviceToken: token,
-      userAgent: `InsiderCollector/${app.getVersion()}`,
-    }),
-    outbox,
-    workDir,
-    appVersion: app.getVersion(),
-    onStatus: () => renderMenu(),
-  });
-  log(`reading ${config.waDbPath} → ${config.apiUrl}`);
-  renderMenu();
-
-  await syncNow();
-  if (access !== 'denied') void publishCatalog();
-  void heartbeat();
-  intervals.push(setInterval(() => void heartbeat(), HEARTBEAT_MS));
-  intervals.push(setInterval(() => void publishCatalog(), CATALOG_MS));
+  await startEngine();
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -220,7 +341,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {});
   app.on('before-quit', () => {
     clearSyncTimer();
-    for (const t of intervals) clearInterval(t);
+    clearIntervals();
     outbox?.close();
   });
   app

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiClient, ApiError } from './api-client.js';
+import { ApiClient, ApiError, signedUrlPut } from './api-client.js';
 import type { IngestMessage } from './types.js';
 
 interface Call {
@@ -119,5 +119,49 @@ describe('ApiClient', () => {
     await expect(c.ingestMessages([])).rejects.toThrow(/1\.\.500/);
     await expect(c.ingestMessages(Array.from({ length: 501 }, () => message))).rejects.toThrow();
     expect(() => new ApiClient({ baseUrl: 'http://x', deviceToken: '' })).toThrow(/token/);
+  });
+});
+
+describe('media endpoints', () => {
+  it('asks for an upload URL and completes with the device token', async () => {
+    const res = { media_id: 7, upload_url: 'https://gcs.test/x?sig=1', gcs_path: 'wa/x', expires_at: '2026-10-19T07:00:00Z', already_uploaded: false };
+    const { c, calls } = client([json(res), json({ status: 'queued' }, 202)]);
+    const req = { group_jid: '1@g.us', stanza_id: 's1', mime: 'image/jpeg', size_bytes: 3, sha256: 'a'.repeat(64) };
+    expect(await c.createMediaUploadUrl(req)).toEqual(res);
+    await c.completeMediaUpload(7);
+    expect(calls.map((x) => [x.init.method, x.url])).toEqual([
+      ['POST', 'http://api.test/v1/ingest/media/upload-url'],
+      ['POST', 'http://api.test/v1/ingest/media/complete'],
+    ]);
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual(req);
+    expect(JSON.parse(String(calls[1]?.init.body))).toEqual({ media_id: 7 });
+    expect(new Headers(calls[1]?.init.headers).get('authorization')).toBe('Bearer tok');
+  });
+});
+
+describe('signedUrlPut', () => {
+  it('PUTs the bytes with the signed Content-Type and no Authorization header', async () => {
+    const f = fakeFetch([new Response(null, { status: 200 })]);
+    const body = new Uint8Array([1, 2, 3]);
+    await signedUrlPut({ fetch: f.fn })('https://gcs.test/x?sig=1', body, 'application/pdf');
+    expect(f.calls).toHaveLength(1);
+    const { url, init } = f.calls[0]!;
+    expect(url).toBe('https://gcs.test/x?sig=1');
+    expect(init.method).toBe('PUT');
+    expect(init.body).toBe(body);
+    const headers = new Headers(init.headers);
+    expect(headers.get('content-type')).toBe('application/pdf');
+    expect(headers.has('authorization')).toBe(false);
+  });
+
+  it('throws ApiError without the signed URL in the message', async () => {
+    const put = signedUrlPut({ fetch: fakeFetch([new Response('SignatureDoesNotMatch', { status: 403 })]).fn });
+    const err = await put('https://gcs.test/x?sig=secret', new Uint8Array(), 'image/jpeg').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 403, retryable: false });
+    expect((err as Error).message).not.toContain('secret');
+
+    const net = signedUrlPut({ fetch: fakeFetch([new Error('ECONNRESET')]).fn });
+    await expect(net('https://gcs.test/x', new Uint8Array(), 'image/jpeg')).rejects.toMatchObject({ status: 0, retryable: true });
   });
 });

@@ -159,6 +159,7 @@ collector.get('/v1/devices/config', async (c) => {
     watched_group_jids: watched.map((w) => w.jid),
     sync_interval_seconds: c.var.config.defaultSyncIntervalSeconds,
     paused: c.var.device.paused,
+    sender_hmac_key: c.var.config.senderHmacKey,
   } satisfies Schemas['DeviceConfig']);
 });
 

@@ -115,6 +115,21 @@ describe('WhatsAppReader.newMessages', () => {
     expect(m.get('SYNTH-G2-0002')?.media).toBeNull();
   });
 
+  it('hands back the local media item and path, which are never part of the upload', () => {
+    const read = reader.newMessages([G2], new Map()).messages;
+    const image = read.find((r) => r.message.stanza_id === 'SYNTH-G2-0003');
+    expect(image?.media).toEqual({ itemPk: 1, localPath: 'Media/120363000000000002@g.us/0/a/SYNTH-0001.jpg' });
+    expect(JSON.stringify(image?.message)).not.toContain('Media/');
+    expect(read.find((r) => r.message.stanza_id === 'SYNTH-G2-0002')?.media).toBeNull();
+  });
+
+  it('re-reads media paths by media item', () => {
+    expect(reader.mediaLocalPaths([1, 1, 999])).toEqual(
+      new Map([[1, 'Media/120363000000000002@g.us/0/a/SYNTH-0001.jpg']]),
+    );
+    expect(reader.mediaLocalPaths([])).toEqual(new Map());
+  });
+
   it('converts Apple-epoch dates to ISO UTC', () => {
     const m = byStanza([G1, G2]);
     expect(m.get('SYNTH-G1-0001')?.sent_at).toBe('2026-10-19T03:30:00.000Z');

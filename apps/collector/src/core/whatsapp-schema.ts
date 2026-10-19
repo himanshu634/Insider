@@ -67,6 +67,13 @@ export const REQUIRED_COLUMNS: readonly string[] = WHATSAPP_TABLES.flatMap((t) =
     .map(([, column]) => `${t.table}.${column}`),
 );
 
+/**
+ * Folders, relative to the folder that holds ChatStorage.sqlite, that ZMEDIALOCALPATH may be
+ * relative to, tried in order. UNCONFIRMED until Phase 0: public macOS tools resolve it against
+ * `Message/` in the shared container; the dev fixture keeps files next to the database.
+ */
+export const MEDIA_ROOTS_FROM_DB_DIR: readonly string[] = ['Message', '.'];
+
 /** Group chat JIDs end with this suffix. */
 export const GROUP_JID_SUFFIX = '@g.us';
 

@@ -1,5 +1,6 @@
-import { readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildFixtureDb,
@@ -13,6 +14,7 @@ import {
 } from '../test-support/fixture.js';
 import { ApiError, type CollectorApi } from './api-client.js';
 import { Outbox } from './outbox.js';
+import { hashSender } from './sender-hash.js';
 import { SyncEngine, type SyncEngineOptions } from './sync-engine.js';
 import type {
   CatalogGroup,
@@ -21,11 +23,20 @@ import type {
   HeartbeatRequest,
   IngestMessage,
   IngestMessagesResponse,
+  MediaUploadUrlRequest,
+  MediaUploadUrlResponse,
 } from './types.js';
 
 /** In-memory stand-in for the API. No network. */
 class FakeApi implements CollectorApi {
-  config: DeviceConfig = { watched_group_jids: [G1, G2], sync_interval_seconds: 90, paused: false };
+  config: DeviceConfig = {
+    watched_group_jids: [G1, G2],
+    sync_interval_seconds: 90,
+    paused: false,
+    sender_hmac_key: TEST_HMAC_KEY,
+  };
+  mediaRequests: MediaUploadUrlRequest[] = [];
+  completed: number[] = [];
   batches: IngestMessage[][] = [];
   heartbeats: HeartbeatRequest[] = [];
   catalogs: CatalogGroup[][] = [];
@@ -65,6 +76,24 @@ class FakeApi implements CollectorApi {
     return { received: groups.length, created: groups.length };
   }
 
+  async createMediaUploadUrl(req: MediaUploadUrlRequest): Promise<MediaUploadUrlResponse> {
+    if (!this.seen.has(`${req.group_jid}/${req.stanza_id}`)) {
+      throw new ApiError('POST /v1/ingest/media/upload-url → 404', 404, false);
+    }
+    this.mediaRequests.push(req);
+    return {
+      media_id: this.mediaRequests.length,
+      upload_url: 'https://storage.example.test/bucket/obj?X-Goog-Signature=abc',
+      gcs_path: 'wa/x.jpeg',
+      expires_at: '2026-10-19T07:00:00.000Z',
+      already_uploaded: false,
+    };
+  }
+
+  async completeMediaUpload(mediaId: number): Promise<void> {
+    this.completed.push(mediaId);
+  }
+
   get uploaded(): IngestMessage[] {
     return this.batches.flat();
   }
@@ -74,6 +103,8 @@ let api: FakeApi;
 let outbox: Outbox;
 let dbPath: string;
 let workDir: string;
+let clock: Date;
+let puts: { url: string; body: Uint8Array; mime: string }[];
 
 function engine(overrides: Partial<SyncEngineOptions> = {}): SyncEngine {
   return new SyncEngine({
@@ -83,13 +114,18 @@ function engine(overrides: Partial<SyncEngineOptions> = {}): SyncEngine {
     outbox,
     workDir,
     appVersion: '0.1.0-test',
-    now: () => new Date(2026, 9, 19, 12, 0, 0),
+    now: () => clock,
+    putFile: async (url, body, mime) => {
+      puts.push({ url, body, mime });
+    },
     ...overrides,
   });
 }
 
 beforeEach(() => {
   api = new FakeApi();
+  clock = new Date(2026, 9, 19, 12, 0, 0);
+  puts = [];
   const dir = makeTempDir();
   dbPath = buildFixtureDb(dir);
   workDir = join(dir, 'snapshots');
@@ -226,9 +262,33 @@ describe('SyncEngine.tick', () => {
     expect(api.batches.map((b) => b.length)).toEqual([500, 500, 114]);
   });
 
-  it('refuses to read without SENDER_HMAC_KEY', async () => {
+  it('hashes senders with the key from the server when there is no env key', async () => {
+    api.config.sender_hmac_key = 'server-key';
     const status = await engine({ senderHmacKey: undefined }).tick();
-    expect(status.error).toMatch(/SENDER_HMAC_KEY/);
+    expect(status.error).toBeNull();
+    expect(api.uploaded).toHaveLength(G1_COUNT + G2_COUNT);
+    const fromG1 = api.uploaded.find((m) => m.stanza_id === 'SYNTH-G1-0002');
+    expect(fromG1?.sender_hash).toBe(hashSender('910000000102@s.whatsapp.net', 'server-key'));
+  });
+
+  it('prefers the server key over SENDER_HMAC_KEY', async () => {
+    api.config.sender_hmac_key = 'server-key';
+    await engine({ senderHmacKey: 'env-key' }).tick();
+    const fromG1 = api.uploaded.find((m) => m.stanza_id === 'SYNTH-G1-0002');
+    expect(fromG1?.sender_hash).toBe(hashSender('910000000102@s.whatsapp.net', 'server-key'));
+  });
+
+  it('falls back to SENDER_HMAC_KEY when the server sends no key', async () => {
+    api.config.sender_hmac_key = '';
+    await engine({ senderHmacKey: 'env-key' }).tick();
+    const fromG1 = api.uploaded.find((m) => m.stanza_id === 'SYNTH-G1-0002');
+    expect(fromG1?.sender_hash).toBe(hashSender('910000000102@s.whatsapp.net', 'env-key'));
+  });
+
+  it('refuses to read without any sender HMAC key', async () => {
+    api.config.sender_hmac_key = '';
+    const status = await engine({ senderHmacKey: undefined }).tick();
+    expect(status.error).toMatch(/sender HMAC key/);
     expect(api.uploaded).toHaveLength(0);
   });
 
@@ -272,5 +332,109 @@ describe('SyncEngine catalog and heartbeat', () => {
     });
     expect(api.heartbeats[0]?.schema_fingerprint).toMatch(/^[0-9a-f]{64}$/);
     expect(api.heartbeats[0]?.last_sync_at).toBe(e.status.lastSyncAt);
+  });
+});
+
+describe('SyncEngine media', () => {
+  const IMAGE_STANZA = 'SYNTH-G2-0003';
+  const IMAGE_PATH = 'Media/120363000000000002@g.us/0/a/SYNTH-0001.jpg';
+
+  function writeMediaFile(relPath: string, bytes: Buffer): void {
+    const file = join(dirname(dbPath), 'Message', relPath);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, bytes);
+  }
+
+  it('uploads an image once WhatsApp has the file, after its message', async () => {
+    const bytes = Buffer.from('synthetic jpeg bytes');
+    writeMediaFile(IMAGE_PATH, bytes);
+    const status = await engine().tick();
+    expect(status.error).toBeNull();
+    expect(api.mediaRequests).toEqual([
+      {
+        group_jid: G2,
+        stanza_id: IMAGE_STANZA,
+        mime: 'image/jpeg',
+        size_bytes: bytes.length,
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+      },
+    ]);
+    expect(puts).toHaveLength(1);
+    expect(Buffer.from(puts[0]!.body).equals(bytes)).toBe(true);
+    expect(puts[0]?.mime).toBe('image/jpeg');
+    expect(api.completed).toEqual([1]);
+    expect(status.mediaWaiting).toBe(0);
+  });
+
+  it('keeps a media message whose file is not downloaded yet and uploads it when it appears', async () => {
+    execOnFixture(dbPath, 'UPDATE ZWAMEDIAITEM SET ZMEDIALOCALPATH = NULL WHERE Z_PK = 1;');
+    const e = engine();
+    const first = await e.tick();
+    expect(first.error).toBeNull();
+    expect(api.uploaded.some((m) => m.stanza_id === IMAGE_STANZA)).toBe(true);
+    expect(outbox.checkpoints().get(G2)).toBe(20); // the checkpoint moved past the image
+    expect(first.mediaWaiting).toBe(1);
+    expect(api.mediaRequests).toHaveLength(0);
+
+    // Still nothing on the next tick.
+    expect((await e.tick()).mediaWaiting).toBe(1);
+
+    // WhatsApp finishes the download.
+    execOnFixture(dbPath, `UPDATE ZWAMEDIAITEM SET ZMEDIALOCALPATH = '${IMAGE_PATH}' WHERE Z_PK = 1;`);
+    writeMediaFile(IMAGE_PATH, Buffer.from('late jpeg'));
+    const later = await e.tick();
+    expect(later.error).toBeNull();
+    expect(later.mediaWaiting).toBe(0);
+    expect(api.mediaRequests.map((r) => r.stanza_id)).toEqual([IMAGE_STANZA]);
+    expect(api.completed).toEqual([1]);
+    expect(readdirSync(workDir)).toEqual([]);
+  });
+
+  it('re-checks pending media even when no group is watched any more', async () => {
+    execOnFixture(dbPath, 'UPDATE ZWAMEDIAITEM SET ZMEDIALOCALPATH = NULL WHERE Z_PK = 1;');
+    const e = engine();
+    await e.tick();
+    api.config.watched_group_jids = [];
+    execOnFixture(dbPath, `UPDATE ZWAMEDIAITEM SET ZMEDIALOCALPATH = '${IMAGE_PATH}' WHERE Z_PK = 1;`);
+    writeMediaFile(IMAGE_PATH, Buffer.from('jpeg'));
+    const status = await e.tick();
+    expect(status.mediaWaiting).toBe(0);
+    expect(api.completed).toHaveLength(1);
+  });
+
+  it('gives up on a file that never downloads after 7 days and records it', async () => {
+    execOnFixture(dbPath, 'UPDATE ZWAMEDIAITEM SET ZMEDIALOCALPATH = NULL WHERE Z_PK = 1;');
+    const e = engine();
+    await e.tick();
+    clock = new Date(clock.getTime() + 7 * 24 * 60 * 60 * 1000 - 1000);
+    expect((await e.tick()).mediaWaiting).toBe(1);
+    clock = new Date(clock.getTime() + 1000);
+    const status = await e.tick();
+    expect(status.mediaWaiting).toBe(0);
+    expect(status.error).toBeNull();
+    expect(outbox.media.failed()).toEqual([
+      expect.objectContaining({ groupJid: G2, stanzaId: IMAGE_STANZA, reason: expect.stringMatching(/7 days/) }),
+    ]);
+  });
+
+  it('gives up the media of a rejected message', async () => {
+    writeMediaFile(IMAGE_PATH, Buffer.from('jpeg'));
+    api.rejectStanzas.add(IMAGE_STANZA);
+    const status = await engine().tick();
+    expect(status.mediaWaiting).toBe(0);
+    expect(api.mediaRequests).toHaveLength(0);
+    expect(outbox.media.failed()[0]).toMatchObject({ stanzaId: IMAGE_STANZA, reason: 'message rejected' });
+  });
+
+  it('does not upload media while the messages cannot be uploaded', async () => {
+    writeMediaFile(IMAGE_PATH, Buffer.from('jpeg'));
+    api.failIngest = true;
+    const e = engine();
+    const down = await e.tick();
+    expect(down.mediaWaiting).toBe(1);
+    expect(api.mediaRequests).toHaveLength(0);
+    api.failIngest = false;
+    expect((await e.tick()).mediaWaiting).toBe(0);
+    expect(api.completed).toHaveLength(1);
   });
 });

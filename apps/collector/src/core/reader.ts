@@ -24,11 +24,21 @@ import {
 /** Last WhatsApp Z_PK read per group JID. A missing group means "from the beginning". */
 export type Checkpoints = ReadonlyMap<string, number>;
 
+/** Where WhatsApp keeps a message's file. Local to this Mac, never uploaded. */
+export interface ReadMedia {
+  /** ZWAMEDIAITEM.Z_PK, used to re-check the path on later ticks. */
+  itemPk: number;
+  /** ZMEDIALOCALPATH as stored (relative); null until WhatsApp has downloaded the file. */
+  localPath: string | null;
+}
+
 export interface ReadMessage {
   groupJid: string;
   /** ZWAMESSAGE.Z_PK — local to this WhatsApp install, never uploaded. */
   pk: number;
   message: IngestMessage;
+  /** Set when the message has a media item. */
+  media: ReadMedia | null;
 }
 
 export interface ReadResult {
@@ -49,6 +59,8 @@ export interface ReaderOptions {
 
 export const DEFAULT_SELF_JID = 'self';
 export const DEFAULT_READ_LIMIT = 5000;
+/** Bound parameters per IN (...) list; SQLite allows 32766, keep well below. */
+const IN_CHUNK = 500;
 
 interface MessageRow {
   pk: number;
@@ -211,9 +223,30 @@ export class WhatsAppReader {
       const prev = result.checkpoints.get(row.group_jid) ?? 0;
       result.checkpoints.set(row.group_jid, Math.max(prev, row.pk));
       const message = this.toIngestMessage(row, key);
-      if (message) result.messages.push({ groupJid: row.group_jid, pk: row.pk, message });
+      if (!message) continue;
+      const media = row.media_item === null ? null : { itemPk: row.media_item, localPath: row.media_path };
+      result.messages.push({ groupJid: row.group_jid, pk: row.pk, message, media });
     }
     return result;
+  }
+
+  /**
+   * Current ZMEDIALOCALPATH of the given media items (null while the file is not downloaded).
+   * Items that no longer exist are left out of the map.
+   */
+  mediaLocalPaths(itemPks: readonly number[]): Map<number, string | null> {
+    const out = new Map<number, string | null>();
+    const pks = [...new Set(itemPks)];
+    for (let i = 0; i < pks.length; i += IN_CHUNK) {
+      const chunk = pks.slice(i, i + IN_CHUNK);
+      const sql = `SELECT ${MI.pk} AS pk, ${MI.localPath} AS path FROM ${MI.table}
+                    WHERE ${MI.pk} IN (${chunk.map(() => '?').join(', ')})`;
+      for (const row of this.db.prepare(sql).all(...chunk)) {
+        const path = row.path === null ? null : String(row.path);
+        out.set(Number(row.pk), path ? path : null);
+      }
+    }
+    return out;
   }
 
   private toIngestMessage(row: MessageRow, senderHmacKey: string): IngestMessage | null {

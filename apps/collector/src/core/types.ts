@@ -10,6 +10,8 @@ export type CatalogGroup = Schemas['CatalogGroup'];
 export type GroupCatalogResponse = Schemas['GroupCatalogResponse'];
 export type DeviceConfig = Schemas['DeviceConfig'];
 export type HeartbeatRequest = Schemas['HeartbeatRequest'];
+export type MediaUploadUrlRequest = Schemas['MediaUploadUrlRequest'];
+export type MediaUploadUrlResponse = Schemas['MediaUploadUrlResponse'];
 
 /** Upper bounds from openapi.yaml (IngestMessage / IngestMessagesRequest). */
 export const MAX_BATCH = 500;

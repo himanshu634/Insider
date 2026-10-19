@@ -1,6 +1,8 @@
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { MEDIA_MESSAGE_TYPES, MEDIA_SCHEMA, MediaQueue } from './media-queue.js';
+import { transaction } from './sqlite.js';
 import { MAX_BATCH, type IngestMessage } from './types.js';
 
 export interface OutboxItem {
@@ -11,6 +13,8 @@ export interface OutboxItem {
 export interface EnqueueInput {
   groupJid: string;
   message: IngestMessage;
+  /** The message's WhatsApp media item, if any (see ReadMedia). */
+  media?: { itemPk: number; localPath: string | null } | null;
 }
 
 /** Local calendar day, `YYYY-MM-DD` (the Mac runs on IST). */
@@ -21,7 +25,8 @@ export function localDay(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
-const SCHEMA_VERSION = 1;
+/** 2: media tables (media-queue.ts). */
+const SCHEMA_VERSION = 2;
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS outbox (
@@ -54,16 +59,23 @@ const SCHEMA = `
 /**
  * The collector's own SQLite file: messages waiting for upload, plus the last WhatsApp Z_PK read
  * per group. A message and the checkpoint that covers it are written in one transaction, so a
- * crash can never skip a message (it can only re-read one, and ingest is idempotent).
+ * crash can never skip a message (it can only re-read one, and ingest is idempotent). Media
+ * messages are recorded in the same transaction (see `media`).
  */
 export class Outbox {
-  private constructor(private readonly db: DatabaseSync) {}
+  /** Media waiting for its file or for upload; shares this database. */
+  readonly media: MediaQueue;
+
+  private constructor(private readonly db: DatabaseSync) {
+    this.media = new MediaQueue(db);
+  }
 
   static open(path: string): Outbox {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     const db = new DatabaseSync(path);
     db.exec('PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;');
     db.exec(SCHEMA);
+    db.exec(MEDIA_SCHEMA);
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
     return new Outbox(db);
   }
@@ -73,20 +85,13 @@ export class Outbox {
   }
 
   private transaction<T>(fn: () => T): T {
-    this.db.exec('BEGIN IMMEDIATE');
-    try {
-      const result = fn();
-      this.db.exec('COMMIT');
-      return result;
-    } catch (err) {
-      this.db.exec('ROLLBACK');
-      throw err;
-    }
+    return transaction(this.db, fn);
   }
 
   /**
-   * Queue `messages` and advance the per-group checkpoints in ONE transaction. Checkpoints only
-   * move forward. Returns how many messages were newly queued (duplicates are ignored).
+   * Queue `messages`, record their image/document media as pending, and advance the per-group
+   * checkpoints in ONE transaction. Checkpoints only move forward. Returns how many messages were
+   * newly queued (duplicates are ignored).
    */
   enqueue(
     messages: readonly EnqueueInput[],
@@ -105,9 +110,12 @@ export class Outbox {
     const at = now.toISOString();
     return this.transaction(() => {
       let added = 0;
-      for (const { groupJid, message } of messages) {
+      for (const { groupJid, message, media } of messages) {
         const payload = JSON.stringify(message);
         added += Number(insert.run(groupJid, message.stanza_id, payload, at).changes);
+        if (media && MEDIA_MESSAGE_TYPES.has(message.type)) {
+          this.media.addPending(groupJid, message.stanza_id, message.type, media.itemPk, media.localPath, at);
+        }
       }
       for (const [groupJid, pk] of checkpoints) advance.run(groupJid, pk, at);
       return added;
@@ -144,7 +152,10 @@ export class Outbox {
     });
   }
 
-  /** Move messages the server rejected out of the queue (kept for inspection, never retried). */
+  /**
+   * Move messages the server rejected out of the queue (kept for inspection, never retried). Their
+   * media is given up too: the server only takes files for messages it has.
+   */
   markRejected(items: readonly { id: number; error?: string | null }[], now: Date = new Date()): void {
     if (items.length === 0) return;
     const move = this.db.prepare(
@@ -152,9 +163,12 @@ export class Outbox {
        SELECT id, group_jid, stanza_id, payload, ?, ? FROM outbox WHERE id = ?`,
     );
     const del = this.db.prepare('DELETE FROM outbox WHERE id = ?');
+    const find = this.db.prepare('SELECT group_jid, stanza_id FROM outbox WHERE id = ?');
     const at = now.toISOString();
     this.transaction(() => {
       for (const { id, error } of items) {
+        const row = find.get(id);
+        if (row) this.media.failForMessage(String(row.group_jid), String(row.stanza_id), 'message rejected', at);
         move.run(error ?? null, at, id);
         del.run(id);
       }

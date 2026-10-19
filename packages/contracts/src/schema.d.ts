@@ -95,7 +95,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Watched groups, sync interval and paused flag for this device */
+        /** Watched groups, sync interval, paused flag and sender HMAC key for this device */
         get: operations["getDeviceConfig"];
         put?: never;
         post?: never;
@@ -503,6 +503,8 @@ export interface components {
             /** @default 90 */
             sync_interval_seconds: number;
             paused: boolean;
+            /** @description Key the collector uses to HMAC sender JIDs (same as the API's SENDER_HMAC_KEY). Sent only to authenticated devices; the collector keeps it in memory. */
+            sender_hmac_key: string;
         };
         HeartbeatRequest: {
             app_version: string;

@@ -5,6 +5,8 @@ import type {
   HeartbeatRequest,
   IngestMessage,
   IngestMessagesResponse,
+  MediaUploadUrlRequest,
+  MediaUploadUrlResponse,
 } from './types.js';
 import { MAX_BATCH } from './types.js';
 
@@ -14,6 +16,8 @@ export interface CollectorApi {
   getDeviceConfig(): Promise<DeviceConfig>;
   heartbeat(body: HeartbeatRequest): Promise<void>;
   postGroupCatalog(groups: CatalogGroup[]): Promise<GroupCatalogResponse>;
+  createMediaUploadUrl(req: MediaUploadUrlRequest): Promise<MediaUploadUrlResponse>;
+  completeMediaUpload(mediaId: number): Promise<void>;
 }
 
 export class ApiError extends Error {
@@ -91,6 +95,14 @@ export class ApiClient implements CollectorApi {
     return (await this.request('POST', '/v1/groups/catalog', { groups })) as GroupCatalogResponse;
   }
 
+  async createMediaUploadUrl(req: MediaUploadUrlRequest): Promise<MediaUploadUrlResponse> {
+    return (await this.request('POST', '/v1/ingest/media/upload-url', req)) as MediaUploadUrlResponse;
+  }
+
+  async completeMediaUpload(mediaId: number): Promise<void> {
+    await this.request('POST', '/v1/ingest/media/complete', { media_id: mediaId });
+  }
+
   private backoff(attempt: number, retryAfterSeconds: number | null): number {
     if (retryAfterSeconds !== null) return Math.min(this.maxDelayMs, retryAfterSeconds * 1000);
     const exp = Math.min(this.maxDelayMs, this.baseDelayMs * 2 ** attempt);
@@ -141,4 +153,39 @@ export class ApiClient implements CollectorApi {
     }
     throw lastError ?? new ApiError(`${method} ${path} failed`, 0, true);
   }
+}
+
+/** PUT one file to a signed upload URL. */
+export type PutFile = (url: string, body: Uint8Array, mime: string) => Promise<void>;
+
+/**
+ * PUT to a signed GCS URL, once (the uploader retries on a later tick with a fresh URL). The
+ * signature is the credential: no Authorization header, so the device token never goes to GCS.
+ * Content-Type must equal the MIME the URL was signed for. Errors leave the URL out of the
+ * message (it carries the signature).
+ */
+export function signedUrlPut(options: { fetch?: typeof fetch; timeoutMs?: number } = {}): PutFile {
+  const fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
+  const timeoutMs = options.timeoutMs ?? 120_000;
+  return async (url, body, mime) => {
+    let res: Response;
+    try {
+      res = await fetchImpl(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': mime },
+        body,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (err) {
+      throw new ApiError(`PUT media failed: ${err instanceof Error ? err.message : String(err)}`, 0, true);
+    }
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new ApiError(
+        `PUT media → ${res.status}${detail ? `: ${detail.slice(0, 200)}` : ''}`,
+        res.status,
+        isRetryableStatus(res.status),
+      );
+    }
+  };
 }
