@@ -119,6 +119,11 @@ bin/insider dev
 
 Start one service on its own with `bin/insider <db|redis|migrate|seed|api|worker|web|collector>`. Run `bin/insider help` for the full list, and `bin/insider test` for every test suite.
 
+The same commands are Make targets: `make setup`, `make dev`, `make web`, `make collector` and so on. `make help` lists them. Two targets exist only in Make:
+
+- `make dev-web` starts everything except the collector.
+- `make dev-real` (or `make collector-real` for the collector alone) reads the Mac's real WhatsApp Desktop database instead of the synthetic fixture. The terminal needs Full Disk Access. Set `WA_REAL_DB=<path>` to use another copy.
+
 ---
 
 ## Roadmap
