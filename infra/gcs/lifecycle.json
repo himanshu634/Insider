@@ -1,0 +1,16 @@
+{
+  "rule": [
+    {
+      "action": { "type": "AbortIncompleteMultipartUpload" },
+      "condition": { "age": 7 }
+    },
+    {
+      "action": { "type": "SetStorageClass", "storageClass": "NEARLINE" },
+      "condition": { "age": 30, "matchesStorageClass": ["STANDARD"] }
+    },
+    {
+      "action": { "type": "SetStorageClass", "storageClass": "COLDLINE" },
+      "condition": { "age": 180, "matchesStorageClass": ["NEARLINE"] }
+    }
+  ]
+}

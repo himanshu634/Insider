@@ -1,0 +1,36 @@
+# Insider pipeline worker (BullMQ on Node 22). Install:
+#   sudo cp infra/systemd/insider-worker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now insider-worker
+# Logs: journalctl -u insider-worker -f
+[Unit]
+Description=Insider pipeline worker (BullMQ jobs and schedules)
+Documentation=file:///opt/insider/infra/README.md
+After=network-online.target redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=insider
+Group=insider
+WorkingDirectory=/opt/insider/services/api
+EnvironmentFile=/etc/insider/api.env
+Environment=NODE_ENV=production
+# Absolute path to Node 22; see insider-api.service.
+ExecStart=/usr/bin/node dist/worker.js
+Restart=always
+RestartSec=5
+# The worker closes BullMQ on SIGTERM and lets running jobs finish; LLM calls
+# can take a while, so give it time before SIGKILL.
+KillSignal=SIGTERM
+TimeoutStopSec=120
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

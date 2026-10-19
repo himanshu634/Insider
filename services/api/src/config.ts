@@ -7,6 +7,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
   return {
     appVersion: '0.1.0',
     port: Number(env.PORT ?? 8000),
+    /** Loopback by default: in production Nginx is the only way in. */
+    host: env.HOST ?? '127.0.0.1',
     databaseUrl: env.DATABASE_URL ?? 'postgres://insider@localhost:54329/insider',
     redisUrl: env.REDIS_URL ?? 'redis://localhost:6380',
     /** Run pipeline jobs inline instead of through BullMQ (tests, or dev without Redis). */

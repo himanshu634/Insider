@@ -1,0 +1,21 @@
+{
+  "name": "@insider/export-importer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Parse WhatsApp .txt chat exports and backfill them through the ingest API",
+  "scripts": {
+    "backfill": "tsx src/cli.ts",
+    "check": "tsc --noEmit",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "@insider/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4.19.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}

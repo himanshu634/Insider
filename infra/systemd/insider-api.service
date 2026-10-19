@@ -1,0 +1,35 @@
+# Insider API (Hono on Node 22). Install:
+#   sudo cp infra/systemd/insider-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now insider-api
+# Logs: journalctl -u insider-api -f
+[Unit]
+Description=Insider API (HTTP, port from PORT in api.env, default 8000)
+Documentation=file:///opt/insider/infra/README.md
+After=network-online.target redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=insider
+Group=insider
+WorkingDirectory=/opt/insider/services/api
+EnvironmentFile=/etc/insider/api.env
+Environment=NODE_ENV=production
+# Absolute path to Node 22. If node comes from nvm/fnm/volta, use that path
+# instead (e.g. /home/insider/.nvm/versions/node/v22.x.y/bin/node).
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillSignal=SIGTERM
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

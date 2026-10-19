@@ -1,0 +1,16 @@
+{
+  "name": "@insider/spike",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Phase 0 probe: read a COPY of WhatsApp Desktop's ChatStorage.sqlite",
+  "scripts": {
+    "probe": "tsx src/probe.ts",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4.19.2",
+    "typescript": "^6.0.3"
+  }
+}

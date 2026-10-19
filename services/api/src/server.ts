@@ -9,9 +9,10 @@ const config = loadConfig();
 const { db, close } = createDb(config.databaseUrl);
 const queue = config.queueInline ? inlineQueue(db) : bullQueue(config.redisUrl);
 
-const server = serve({ fetch: createApp({ db, queue, config }).fetch, port: config.port }, (info) =>
+const server = serve(
+  { fetch: createApp({ db, queue, config }).fetch, port: config.port, hostname: config.host }, (info) =>
   console.log(
-    `Insider API on http://localhost:${info.port} (jobs: ${config.queueInline ? 'inline' : 'BullMQ'})`,
+    `Insider API on http://${config.host}:${info.port} (jobs: ${config.queueInline ? 'inline' : 'BullMQ'})`,
   ),
 );
 
