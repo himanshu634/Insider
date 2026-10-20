@@ -109,14 +109,58 @@ describe('market tools', () => {
     expect(await run('_')).toEqual([]);
   });
 
-  it('market tools never return sender_name or jid', async () => {
+  it('market tools never return sender_name, jid, phone numbers or mentions', async () => {
+    await addMessage('contact', '2026-10-19T07:00:00Z', 'arenda 1265, call 98765 43210 @919876543210');
     // What the model sees is the serialized return value of `run` (both adapters send it), so that is what is pinned.
     const ctx = createToolContext(t.db, 8);
     const sent: string[] = [];
     for (const mt of marketTools) sent.push(JSON.stringify(await mt.run(ctx, mt.name === 'search_messages' ? { text: 'arenda' } : {})));
-    expect(sent.join('\n')).not.toMatch(/Ramesh|120363@g\.us|sender_name|"jid"/);
+    const leak = /Ramesh|120363@g\.us|sender_name|"jid"|98765|43210/;
+    expect(sent.join('\n')).toContain('call [phone] @[member]');
+    expect(sent.join('\n')).not.toMatch(leak);
     // The evidence is a projection of the same results, so it is clean too.
-    expect(ctx.evidence.join('\n')).not.toMatch(/Ramesh|120363@g\.us|sender_name|"jid"/);
+    expect(ctx.evidence.join('\n')).not.toMatch(leak);
+  });
+
+  describe('contact scrubbing (SF-03)', () => {
+    const RAW = 'castor 6250, call 98765 43210 @919876543210';
+
+    beforeEach(() => addMessage('contact', '2026-10-19T07:00:00Z', RAW));
+
+    it('search_messages masks phone numbers and mentions for the model and in the evidence', async () => {
+      const ctx = createToolContext(t.db, 8);
+      const out = (await tool('search_messages').run(ctx, { text: 'call' })) as MessageHit[];
+      expect(out.map((h) => h.text)).toEqual(['castor 6250, call [phone] @[member]']);
+      for (const digits of ['98765', '43210', '9876543210', '919876543210']) {
+        expect(JSON.stringify(out)).not.toContain(digits);
+        expect(ctx.evidence.join('\n')).not.toContain(digits);
+      }
+    });
+
+    it('a phone number never supports a number in an answer, and the price beside it still does', async () => {
+      const ctx = createToolContext(t.db, 8);
+      await tool('search_messages').run(ctx, { text: 'call' });
+      expect(uncheckedNumbers('Call 98765 43210, 9876543210 or 919876543210.', ctx.evidence)).toEqual([
+        98765, 43210, 9876543210, 919876543210,
+      ]);
+      expect(uncheckedNumbers('Castor is 6250.', ctx.evidence)).toEqual([]);
+    });
+
+    it('search_messages masks a phone number in the group name', async () => {
+      await t.db.update(waGroup).set({ name: 'Rajkot Rates 98765 43210' }).where(eq(waGroup.id, groupId));
+      const ctx = createToolContext(t.db, 8);
+      const out = (await tool('search_messages').run(ctx, { text: 'call' })) as MessageHit[];
+      expect(out[0]!.group_name).toBe('Rajkot Rates [phone]');
+      expect(ctx.evidence.join('\n')).toContain('Rajkot Rates [phone]');
+    });
+
+    it('the stored text and the web feed keep the raw text', async () => {
+      await tool('search_messages').run(createToolContext(t.db, 8), { text: 'call' });
+      const [stored] = await t.db.select({ text: waMessage.text }).from(waMessage).where(eq(waMessage.stanzaId, 'contact'));
+      expect(stored!.text).toBe(RAW);
+      const page = await (await t.request('/v1/messages?group=120363@g.us', { device: false })).json();
+      expect(page.items.map((m: { text: string }) => m.text)).toContain(RAW);
+    });
   });
 
   describe('number-check evidence', () => {

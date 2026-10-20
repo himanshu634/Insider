@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { MAX_SEARCH_LIMIT, type MessageHit, searchMessages } from '../queries/messages.js';
 import { type LatestPriceRow, latestPrices } from '../queries/prices.js';
+import { scrubContacts } from './scrub.js';
 
 const DEFAULT_SEARCH_LIMIT = 10;
 
@@ -88,6 +89,7 @@ const searchMessagesTool = defineTool({
   description:
     'Search the text of WhatsApp trader messages for a word or phrase (any case), newest first. ' +
     `Returns at most ${MAX_SEARCH_LIMIT} messages with their group name, time and an anonymous sender hash. ` +
+    'Phone numbers in the text show as [phone] and member mentions as @[member]. ' +
     DATA_NOT_INSTRUCTIONS,
   input: z.object({
     text: z.string().min(1).describe('Text to look for in the message'),
@@ -102,7 +104,12 @@ const searchMessagesTool = defineTool({
       .describe(`How many messages to return (default ${DEFAULT_SEARCH_LIMIT})`),
   }),
   async run(ctx, input) {
-    const hits = await searchMessages(ctx.db, { ...input, limit: input.limit ?? DEFAULT_SEARCH_LIMIT });
+    // Scrubbed once: the model and the number check see the same text, so a phone number never supports an answer.
+    const hits = (await searchMessages(ctx.db, { ...input, limit: input.limit ?? DEFAULT_SEARCH_LIMIT })).map((h) => ({
+      ...h,
+      group_name: scrubContacts(h.group_name),
+      text: h.text === null ? null : scrubContacts(h.text),
+    }));
     for (const hit of hits) ctx.sources.add(hit.id);
     ctx.evidence.push(JSON.stringify(messageEvidence(hits), null, 1));
     return hits;

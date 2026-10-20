@@ -7,7 +7,10 @@ import { istDayEnd, istDayStart } from '../pipeline/schedule.js';
 
 export const MAX_SEARCH_LIMIT = 20;
 
-/** A message as the agents see it: the sender is only a hash, and the group has no jid. */
+/**
+ * A message for the agent tools: the sender is only a hash, and the group has no jid. The text and group name are
+ * raw here; the search_messages tool masks phone numbers and mentions (agent/scrub.ts) before a model sees them.
+ */
 export interface MessageHit {
   id: number;
   group_id: number;
