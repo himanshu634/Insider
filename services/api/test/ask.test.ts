@@ -156,7 +156,7 @@ describe('ask', () => {
     expect(spy).toHaveBeenCalledTimes(8);
     const last = requests[9].messages.at(-1).content[0];
     expect(last).toMatchObject({ type: 'tool_result', tool_use_id: 'tu8', is_error: true });
-    expect(last.content).toContain('budget');
+    expect(last.content).toBe('Tool-call budget used up. Answer from the results you already have.');
     // The eighth call still ran and succeeded.
     expect(requests[8].messages.at(-1).content[0]).toMatchObject({ tool_use_id: 'tu7' });
     expect(requests[8].messages.at(-1).content[0].is_error).toBeFalsy();
