@@ -85,6 +85,7 @@ insider/
     export-importer/   backfill from WhatsApp .txt chat exports
   infra/               GCS bucket script, systemd units, Nginx config
   bin/insider          Mac command: start one service, or everything in dev mode
+  compose.yaml         local dev containers (Postgres, Redis, API, worker, web); docker/ holds the image
   docs/                plans and runbooks
 ```
 
@@ -105,7 +106,9 @@ One language (TypeScript), one package manager (pnpm workspaces), one lockfile.
 
 ## Run it locally (macOS)
 
-Prerequisites: Node 22 + pnpm and Homebrew PostgreSQL (`brew install postgresql@18`). Redis is optional (`brew install redis`); without it jobs run inline in the API.
+Everything except the collector runs in Docker: Postgres, Redis, migrations, the API, the job worker and the web app ([compose.yaml](compose.yaml)). The database lives in the `insider_pgdata` Docker volume.
+
+Prerequisites: [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/), and Node 22 + pnpm on the Mac for the collector, tests, type checks and codegen.
 
 ```bash
 bin/insider setup
@@ -115,13 +118,15 @@ bin/insider setup
 bin/insider dev
 ```
 
-`bin/insider dev` starts everything in dev mode: a project-local Postgres, Redis (if installed), migrations, the API (:8000, watch mode), the job worker, the web app (:5173) and the collector against a synthetic WhatsApp fixture. Ctrl-C stops all of it.
+`bin/insider dev` builds the dev image if needed, starts the containers (Postgres :54329, Redis :6380, migrations, the API :8000, the job worker, the web app :5173), waits until the API is healthy, and then starts the collector on the Mac against a synthetic WhatsApp fixture. Source folders are mounted into the containers, so the API and the web app reload on save. Ctrl-C stops all of it. Ports bind to 127.0.0.1 only.
 
-Start one service on its own with `bin/insider <db|redis|migrate|seed|api|worker|web|collector>`. Run `bin/insider help` for the full list, and `bin/insider test` for every test suite.
+`bin/insider up` starts the containers in the background (for the packaged collector app), `bin/insider down` stops them, `bin/insider logs` follows their logs and `bin/insider psql` opens a database shell. Register a collector with `bin/insider create-device <name>`. Start one service on its own with `bin/insider <db|redis|migrate|seed|api|worker|web|collector>`. Run `bin/insider help` for the full list, and `bin/insider test` for every test suite (on the Mac).
+
+Upgrading from the Homebrew Postgres setup: stop the old cluster (`pg_ctl -D .dev/postgres stop`), then run `bin/insider import-local-db` once. It copies the database into the container and leaves `.dev/postgres` as it was.
 
 The same commands are Make targets: `make setup`, `make dev`, `make web`, `make collector` and so on. `make help` lists them. Two targets exist only in Make:
 
-- `make dev-web` starts everything except the collector.
+- `make dev-web` starts the containers without the collector.
 - `make dev-real` (or `make collector-real` for the collector alone) reads the Mac's real WhatsApp Desktop database instead of the synthetic fixture. The terminal needs Full Disk Access. Set `WA_REAL_DB=<path>` to use another copy.
 
 ---

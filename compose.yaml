@@ -1,0 +1,129 @@
+# Local dev stack: Postgres, Redis, migrations, the API, the job worker and the web app, each in a
+# container. Only the collector (the macOS app) runs on the Mac; it reaches the API on
+# localhost:8000. Start it with `bin/insider dev`. Ports bind to 127.0.0.1 only, because Postgres
+# trusts every connection.
+name: insider
+
+# Only `migrate` builds insider-dev; the other services reuse it, so it is built once.
+x-app: &app
+  image: insider-dev
+  pull_policy: never
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    # .env is written for processes on the Mac. These replace the values that differ in a container.
+    DATABASE_URL: postgres://insider@postgres:5432/insider
+    REDIS_URL: redis://redis:6379
+    HOST: 0.0.0.0
+    PORT: '8000'
+    QUEUE_INLINE: 'false'
+    CORS_ORIGINS: http://localhost:${INSIDER_WEB_PORT:-5173},http://localhost:4173
+    SENDER_HMAC_KEY: ${SENDER_HMAC_KEY:-dev-sender-hmac-key}
+    AUTH_DEV_BYPASS: ${AUTH_DEV_BYPASS:-true}
+    INSIDER_DEVICE_TOKEN: ${INSIDER_DEVICE_TOKEN:-dev-device-token}
+    TZ: Asia/Kolkata
+  # Source from the Mac, so edits reload without a rebuild. node_modules stay in the image.
+  volumes:
+    - ./services/api/src:/app/services/api/src:ro
+    - ./services/api/drizzle:/app/services/api/drizzle:ro
+    - ./packages/contracts:/app/packages/contracts:ro
+
+services:
+  postgres:
+    image: postgres:18
+    command: [postgres, -c, timezone=Asia/Kolkata, -c, log_timezone=Asia/Kolkata]
+    environment:
+      POSTGRES_USER: insider
+      POSTGRES_DB: insider
+      POSTGRES_HOST_AUTH_METHOD: trust
+      TZ: Asia/Kolkata
+    ports:
+      - 127.0.0.1:${INSIDER_PG_PORT:-54329}:5432
+    volumes:
+      # Postgres 18 images keep PGDATA under /var/lib/postgresql/18/docker.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: [CMD, pg_isready, -U, insider, -d, insider]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:8-alpine
+    command: [redis-server, --save, '', --appendonly, 'no']
+    ports:
+      - 127.0.0.1:${INSIDER_REDIS_PORT:-6380}:6379
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # One-shot: apply migrations, then make sure the dev collector device exists.
+  migrate:
+    <<: *app
+    build:
+      context: .
+      dockerfile: docker/dev.Dockerfile
+    pull_policy: missing
+    command:
+      - sh
+      - -c
+      - >-
+        pnpm --silent --filter @insider/api db:migrate &&
+        pnpm --silent --filter @insider/api create-device dev-mac --token "$$INSIDER_DEVICE_TOKEN" > /dev/null &&
+        echo 'Dev collector device ready'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    command: [pnpm, --filter, '@insider/api', dev]
+    ports:
+      - 127.0.0.1:${INSIDER_API_PORT:-8000}:8000
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8000/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  # BullMQ worker; also registers the IST cron schedules (aggregate, insights, brief, watchdog).
+  worker:
+    <<: *app
+    command: [pnpm, --filter, '@insider/api', dev:worker]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  web:
+    image: insider-dev
+    pull_policy: never
+    command: [pnpm, --filter, '@insider/web', exec, vite, dev, --host, 0.0.0.0, --port, '5173', --strictPort]
+    environment:
+      # The browser runs on the Mac, so it calls the API through the published port.
+      VITE_API_BASE_URL: http://localhost:${INSIDER_API_PORT:-8000}
+    ports:
+      - 127.0.0.1:${INSIDER_WEB_PORT:-5173}:5173
+    volumes:
+      - ./apps/web/src:/app/apps/web/src:ro
+      - ./apps/web/static:/app/apps/web/static:ro
+      - ./packages/contracts:/app/packages/contracts:ro
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  pgdata:

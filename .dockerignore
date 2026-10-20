@@ -1,0 +1,16 @@
+# Keep the build context small and secrets out of images.
+**/node_modules
+**/dist
+**/build
+**/.svelte-kit
+**/test-results
+**/playwright-report
+apps/collector/out
+.claude
+.dev
+.git
+.github
+.env
+.env.*
+!.env.example
+**/.DS_Store

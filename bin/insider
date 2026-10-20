@@ -5,7 +5,9 @@
 #   bin/insider <service>      start one service in the foreground
 #   bin/insider help           list commands
 #
-# Local state (Postgres cluster, Redis data, fixture DB, logs) lives in .dev/ and is git-ignored.
+# Postgres, Redis, the API, the worker and the web app run in Docker containers (compose.yaml);
+# the database lives in the `insider_pgdata` volume. Only the collector (the macOS app) runs on
+# the Mac. Collector state (fixture DB, logs) lives in .dev/ and is git-ignored.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -47,30 +49,16 @@ warn() { printf '\033[33m! %s\033[0m\n' "$*" >&2; }
 die() { printf '\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 not found. $2"; }
 
-wait_for_pg() {
-  for _ in $(seq 1 60); do
-    pg_isready -q -h localhost -p "$PG_PORT" -U insider && return 0
-    sleep 0.5
-  done
-  die "Postgres did not start on port $PG_PORT (log: $DEV/postgres.log)"
+need_docker() {
+  need docker "Install Docker Desktop: https://docs.docker.com/desktop/setup/install/mac-install/"
+  docker info >/dev/null 2>&1 || die "Docker is not running. Start Docker Desktop and try again."
 }
 
-ensure_pg_cluster() {
-  need initdb "Install PostgreSQL: brew install postgresql@18"
-  if [[ ! -f "$DEV/postgres/PG_VERSION" ]]; then
-    mkdir -p "$DEV"
-    bold "Creating local Postgres cluster in .dev/postgres"
-    initdb -D "$DEV/postgres" -U insider --auth=trust -E UTF8 --locale=C >/dev/null
-  fi
-}
+# Run from the repo root, so compose finds compose.yaml and reads .env for ${…} values.
+compose() { docker compose "$@"; }
 
-ensure_database() {
-  wait_for_pg
-  if ! psql -h localhost -p "$PG_PORT" -U insider -d postgres -tAc \
-      "select 1 from pg_database where datname = 'insider'" | grep -q 1; then
-    createdb -h localhost -p "$PG_PORT" -U insider insider
-  fi
-}
+# psql inside the Postgres container: dbsql "<sql>"
+dbsql() { compose exec -T postgres psql -U insider -d insider -tAc "$1"; }
 
 ensure_fixture_db() {
   if [[ ! -f "$INSIDER_WA_DB" ]]; then
@@ -80,49 +68,58 @@ ensure_fixture_db() {
   fi
 }
 
-api() { pnpm --silent --filter @insider/api "$@"; }
-
-# --- single services (foreground) ----------------------------------------------------------
+# --- single services (foreground, in containers) -------------------------------------------
 cmd_db() {
-  ensure_pg_cluster
-  pg_isready -q -h localhost -p "$PG_PORT" -U insider && die "Something already listens on port $PG_PORT"
-  bold "Postgres on localhost:$PG_PORT (data: .dev/postgres)"
-  # macOS: postgres refuses to start without a valid LC_ALL ("postmaster became multithreaded")
-  export LC_ALL="${LC_ALL:-en_US.UTF-8}"
-  exec postgres -D "$DEV/postgres" -p "$PG_PORT" -k "$DEV" -c listen_addresses=localhost
+  need_docker
+  bold "Postgres on localhost:$PG_PORT (container; data in the insider_pgdata volume)"
+  exec docker compose up postgres
 }
 
 cmd_redis() {
-  need redis-server "Install Redis: brew install redis"
-  mkdir -p "$DEV/redis"
-  bold "Redis on localhost:$REDIS_PORT"
-  exec redis-server --port "$REDIS_PORT" --dir "$DEV/redis" --save "" --appendonly no
+  need_docker
+  bold "Redis on localhost:$REDIS_PORT (container)"
+  exec docker compose up redis
 }
 
 cmd_migrate() {
-  ensure_database
-  api db:migrate
+  # The migrate service applies the migrations and makes sure the dev-mac device exists.
+  need_docker
+  compose run --rm migrate
 }
 
 cmd_seed() {
   # Dev collector device whose token matches INSIDER_DEVICE_TOKEN.
-  api create-device "dev-mac" --token "$INSIDER_DEVICE_TOKEN" >/dev/null
+  need_docker
+  compose run --rm -T migrate \
+    pnpm --silent --filter @insider/api create-device "dev-mac" --token "$INSIDER_DEVICE_TOKEN" >/dev/null
   echo "Dev collector device ready (token from INSIDER_DEVICE_TOKEN)"
 }
 
+cmd_create_device() {
+  [[ $# -ge 1 ]] || die "Usage: bin/insider create-device <name>"
+  need_docker
+  # Only the token goes to stdout (enter it in the collector's Connect window); Docker's own
+  # output goes to stderr.
+  docker image inspect insider-dev >/dev/null 2>&1 || compose build migrate >&2
+  compose run --rm -T migrate pnpm --silent --filter @insider/api create-device "$@"
+}
+
 cmd_api() {
-  bold "API on http://localhost:$API_PORT"
-  exec pnpm --filter @insider/api dev
+  need_docker
+  bold "API on http://localhost:$API_PORT (container)"
+  exec docker compose up api
 }
 
 cmd_worker() {
   # BullMQ worker; also registers the IST cron schedules (aggregate, insights, brief, watchdog).
-  exec pnpm --filter @insider/api dev:worker
+  need_docker
+  exec docker compose up worker
 }
 
 cmd_web() {
-  bold "Web on http://localhost:$WEB_PORT"
-  exec pnpm --filter @insider/web exec vite dev --port "$WEB_PORT" --strictPort
+  need_docker
+  bold "Web on http://localhost:$WEB_PORT (container)"
+  exec docker compose up web
 }
 
 cmd_collector() {
@@ -152,7 +149,15 @@ stop_all() {
   echo
   bold "Stopping services…"
   for pid in "${PIDS[@]}"; do kill -TERM -- "-$pid" 2>/dev/null || true; done
+  compose stop
   wait 2>/dev/null || true
+}
+
+# Containers in the background: build the image if needed, migrate, wait until the API is healthy.
+cmd_up() {
+  need_docker
+  compose up --build --detach --wait api worker web
+  bold "Insider containers are up — web http://localhost:$WEB_PORT · API http://localhost:$API_PORT/healthz"
 }
 
 cmd_dev() {
@@ -164,29 +169,15 @@ cmd_dev() {
     esac
   done
 
-  need pnpm "Install pnpm: brew install pnpm"
+  need_docker
   trap stop_all INT TERM EXIT
+  cmd_up
 
-  if pg_isready -q -h localhost -p "$PG_PORT" -U insider; then
-    echo "Using the Postgres already running on port $PG_PORT"
-  else
-    ensure_pg_cluster
-    start_bg db "$0" db
-  fi
-  cmd_migrate
-  cmd_seed
-
-  if command -v redis-server >/dev/null 2>&1; then
-    export QUEUE_INLINE=false
-    start_bg redis "$0" redis
-    start_bg worker "$0" worker
-  else
-    warn "redis-server not found (brew install redis): jobs run inline in the API, no worker or schedules."
-    export QUEUE_INLINE=true
-  fi
-
-  start_bg api "$0" api
-  start_bg web "$0" web
+  # compose prefixes each line with the service name already.
+  set -m
+  docker compose logs --follow --tail=20 api worker web &
+  PIDS+=("$!")
+  set +m
   if [[ $with_collector == 1 ]]; then
     start_bg collector "$0" collector
   fi
@@ -195,11 +186,67 @@ cmd_dev() {
   wait
 }
 
+cmd_down() {
+  # Stops and removes the containers. The database volume stays.
+  need_docker
+  compose down
+}
+
+cmd_logs() {
+  need_docker
+  compose logs --follow --tail=100 "$@"
+}
+
+cmd_psql() {
+  need_docker
+  exec docker compose exec postgres psql -U insider -d insider
+}
+
+# One-time move: copy the database from the Homebrew cluster in .dev/postgres (used before
+# Postgres ran in Docker) into the Postgres container. .dev/postgres is left as it is.
+cmd_import_local_db() {
+  local old="$DEV/postgres" port=54330 dump="$DEV/insider-local.dump" counts
+  [[ -f "$old/PG_VERSION" ]] || die "No old cluster at .dev/postgres: nothing to import."
+  need pg_ctl "Reading .dev/postgres needs the Homebrew PostgreSQL tools: brew install postgresql@18"
+  if pg_ctl -D "$old" status >/dev/null 2>&1; then
+    die "The old Postgres in .dev/postgres is running. Stop bin/insider dev, then: pg_ctl -D .dev/postgres stop"
+  fi
+  need_docker
+  compose up --detach --wait postgres
+  if [[ "$(dbsql "select count(*) from pg_namespace where nspname = 'market_intel'")" != 0 ]]; then
+    die "The Postgres container already has Insider data. Nothing imported."
+  fi
+
+  bold "Reading .dev/postgres (temporarily on port $port)"
+  # macOS: postgres refuses to start without a valid LC_ALL ("postmaster became multithreaded")
+  export LC_ALL="${LC_ALL:-en_US.UTF-8}"
+  pg_ctl -D "$old" -o "-p $port -k $DEV -c listen_addresses=localhost" \
+    -l "$DEV/postgres-import.log" -w start >/dev/null
+  counts="select (select count(*) from market_intel.collector_device) || ' devices, ' ||
+    (select count(*) from market_intel.wa_group) || ' groups, ' ||
+    (select count(*) from market_intel.wa_message) || ' messages'"
+  if ! pg_dump -h localhost -p "$port" -U insider -Fc -f "$dump" insider; then
+    pg_ctl -D "$old" -m fast -w stop >/dev/null
+    die "pg_dump failed (log: .dev/postgres-import.log)"
+  fi
+  echo "Old cluster: $(psql -h localhost -p "$port" -U insider -d insider -tAc "$counts")"
+  pg_ctl -D "$old" -m fast -w stop >/dev/null
+
+  bold "Restoring into the Postgres container"
+  compose exec -T postgres pg_restore -U insider -d insider --no-owner --exit-on-error < "$dump"
+  echo "Container:   $(dbsql "$counts")"
+  echo "Done. The dump is in ${dump#"$ROOT"/}; .dev/postgres is unchanged and can be deleted."
+}
+
 # --- setup, tests, codegen -----------------------------------------------------------------
 cmd_setup() {
   need pnpm "Install pnpm: brew install pnpm"
+  need_docker
+  # On the Mac: the collector, tests, type checks and codegen. Services get their own install
+  # inside the insider-dev image.
   pnpm install
   [[ -f "$ROOT/.env" ]] || { cp "$ROOT/.env.example" "$ROOT/.env"; echo "Created .env from .env.example"; }
+  compose build
   echo "Done. Next: bin/insider dev"
 }
 
@@ -211,18 +258,24 @@ usage() {
   cat <<EOF
 Usage: bin/insider <command>
 
-  dev [--no-collector]   Start everything in dev mode: Postgres, Redis (if installed),
-                         migrations, API (watch), job worker, web, collector
-  db                     Local Postgres on :$PG_PORT (.dev/postgres)
-  redis                  Local Redis on :$REDIS_PORT
-  migrate                Apply database migrations (drizzle)
-  seed                   Create the dev collector device
-  api                    API dev server on :$API_PORT (Hono, tsx watch)
-  worker                 Job worker + IST schedules (BullMQ, needs Redis)
-  web                    SvelteKit dev server on :$WEB_PORT
-  collector              Collector menu-bar app (Electron) against the synthetic fixture DB
-  setup                  Install all dependencies and create .env
-  test                   Run every test suite
+  dev [--no-collector]   Start everything: the containers (Postgres, Redis, migrations, API,
+                         worker, web) and the collector on the Mac. Ctrl-C stops all
+  up                     Start the containers in the background and wait until they are healthy
+  down                   Stop and remove the containers (the database volume stays)
+  logs [service…]        Follow container logs
+  db                     Postgres container on :$PG_PORT
+  redis                  Redis container on :$REDIS_PORT
+  migrate                Apply database migrations (drizzle) and create the dev-mac device
+  seed                   Create the dev-mac collector device
+  create-device <name>   Register a collector device and print its token
+  psql                   psql into the Postgres container
+  api                    API container on :$API_PORT (Hono, tsx watch)
+  worker                 Job worker container + IST schedules (BullMQ)
+  web                    Web container on :$WEB_PORT
+  collector              Collector menu-bar app (Electron, on the Mac) against the synthetic fixture DB
+  import-local-db        One-time: copy the old .dev/postgres database into the Postgres container
+  setup                  Install dependencies, create .env, build the dev image
+  test                   Run every test suite (on the Mac)
   gen                    Regenerate types from packages/contracts/openapi.yaml
 EOF
 }
@@ -232,6 +285,12 @@ main() {
   [[ $# -gt 0 ]] && shift
   case "$cmd" in
     dev) cmd_dev "$@" ;;
+    up) cmd_up ;;
+    down) cmd_down ;;
+    logs) cmd_logs "$@" ;;
+    psql) cmd_psql ;;
+    create-device) cmd_create_device "$@" ;;
+    import-local-db) cmd_import_local_db ;;
     db) cmd_db ;;
     redis) cmd_redis ;;
     migrate) cmd_migrate ;;
