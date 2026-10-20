@@ -66,6 +66,18 @@ Commodities: **castor and groundnut**, plus the mandis the team tracks. More are
 3. **Aggregate.** Jobs build daily prices per commodity × mandi, detect insights and write the evening brief.
 4. **Read.** The web app shows the brief, prices, trends, feed and review queue.
 
+### Market Analyst (planned)
+
+How a message becomes a stored price, and how the daily analysis turns prices into forecasts and market-shift insights. Nothing in this diagram is built yet.
+
+![Market Analyst architecture: collect and filter, LLM extraction with code checks, daily analysis](docs/diagrams/market-analyst-architecture.png)
+
+- **Green** steps call an LLM. Everything else is code. The LLM reads messages; it never sees computed prices and never calculates one.
+- **Context tiers.** Tier 0 (rules and dictionaries, cached) and Tier 1 (the message, the message it replies to, and the group) go with every call. Tier 2 (recent thread, the sender's recent messages, close dictionary matches, or other rows from the same image) is fetched by code only when the first pass says what it is missing. A message gets at most two LLM calls.
+- **Yellow** is the human review queue: rows that fail a check or score below 0.8 confidence.
+
+Edit the diagram: open [`docs/diagrams/market-analyst-architecture.excalidraw`](docs/diagrams/market-analyst-architecture.excalidraw) at [excalidraw.com](https://excalidraw.com) (File → Open). The mermaid source is [`market-analyst-architecture.mmd`](docs/diagrams/market-analyst-architecture.mmd). Test and eval cases: [docs/market-analyst-use-cases.md](docs/market-analyst-use-cases.md).
+
 ---
 
 ## Repository layout (monorepo, TypeScript only)
