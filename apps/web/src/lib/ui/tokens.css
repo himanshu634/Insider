@@ -1,8 +1,9 @@
 /*
  * Mandi Ledger — design tokens.
  *
- * Raw theme values are CSS custom properties. Light is the default; dark applies
- * under prefers-color-scheme unless <html data-theme="light">, and any element
+ * Raw theme values are CSS custom properties. Light is the default (app.html ships
+ * <html data-theme="light">); dark applies under prefers-color-scheme only when that
+ * attribute is removed (Settings → System), and any element
  * with data-theme="dark" | "light" forces that theme for its subtree (the /design
  * route uses this to show both themes side by side).
  *
