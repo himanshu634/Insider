@@ -1,0 +1,62 @@
+%%{init: {"flowchart": {"padding": 28, "nodeSpacing": 44, "rankSpacing": 60}}}%%
+graph LR
+  subgraph collect["1 · Collect and filter (code)"]
+    direction TB
+    WA["WhatsApp groups
+each linked to commodities"] --> COL["Mac collector
+every 90 seconds"]
+    COL --> DED["Dedupe forwards
+one source per post"]
+    DED --> GATE["Rule gate
++ dictionary hints"]
+    GATE -- "noise" --> SKIP["Skipped
+no LLM call"]
+  end
+
+  subgraph extract["2 · Extract (LLM reads, code checks)"]
+    direction TB
+    PKT["Build packet
+Tier 0: rules + dictionaries
+Tier 1: message, reply, group"] --> LLM1(["LLM pass 1
+structured output"])
+    LLM1 -- "unresolved" --> T2["Code fetches Tier 2
+thread, sender,
+term or image"]
+    T2 --> LLM2(["LLM pass 2
+at most once"])
+    LLM1 -- "resolved" --> NORM["Normalize
+₹/quintal, names, dates"]
+    LLM2 --> NORM
+    NORM --> VAL["Validate
+evidence, numbers,
+bounds"]
+    VAL -- "fails or below 0.8" --> REV["Review queue"]
+  end
+
+  subgraph analyse["3 · Analyse (daily, from 18:00 IST)"]
+    direction TB
+    DP[("daily_price
+weighted consensus")] --> SIG["Signals
+lead-lag, spreads,
+arrivals"]
+    SIG --> FC["Forecast + backtest
+1, 3 and 7 days"]
+    FC --> AG(["Analyst agent
+snapshot + read-only tools"])
+    AG -- "number check" --> OUT["Outlook, insights,
+19:00 brief, Ask"]
+  end
+
+  collect -- "price candidates" --> extract
+  extract -- "stored rows + llm_call log" --> analyse
+
+  classDef code fill:#ffffff,stroke:#1e1e1e
+  classDef llm fill:#d3f9d8,stroke:#2f9e44
+  classDef store fill:#e7f5ff,stroke:#1971c2
+  classDef hold fill:#fff3bf,stroke:#f08c00
+  classDef muted fill:#f1f3f5,stroke:#868e96
+  class WA,COL,DED,GATE,PKT,T2,NORM,VAL,SIG,FC,OUT code
+  class LLM1,LLM2,AG llm
+  class DP store
+  class REV hold
+  class SKIP muted
