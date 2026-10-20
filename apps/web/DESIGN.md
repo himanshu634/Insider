@@ -27,9 +27,10 @@ and dark side by side, with measured contrast for each colour role.
 
 All tokens live in `src/lib/ui/tokens.css`. Raw values are CSS custom properties; `@theme`
 maps them to Tailwind utilities (`bg-surface`, `text-ink-muted`, `border-border`, ...).
-Light is the default, dark applies under `prefers-color-scheme: dark`, and
-`<html data-theme="light|dark">` (Settings → Appearance) overrides the system. Any
-element with `data-theme` forces that theme for its subtree.
+The app opens in light: `app.html` ships `<html data-theme="light">`. Settings →
+Appearance switches to dark (`data-theme="dark"`) or System (no attribute, so dark
+applies under `prefers-color-scheme: dark`). Any element with `data-theme` forces that
+theme for its subtree.
 
 ### Colour roles
 
@@ -103,7 +104,7 @@ Chart series use `--chart-1` … `--chart-6` and `--chart-grid`.
 | `Toaster` + `toasts` | Minimal toast store; polite live region, auto-dismiss after 4s                                                            |
 | `Dialog`             | Native `<dialog>` (focus trap, Escape); `variant="sheet"` docks to the bottom on phones                                   |
 | `Icon`, `Spinner`    | One outline icon family (24px grid, 1.75 stroke) and the loading spinner                                                  |
-| `theme`              | Theme preference (`system` / `light` / `dark`) persisted in localStorage                                                  |
+| `theme`              | Theme preference (`light` default / `dark` / `system`) persisted in localStorage                                          |
 
 App-level composites built from these live in `src/lib/components/` (navigation, collector
 badge, page header, loading/error states, insight card, price trend chart).

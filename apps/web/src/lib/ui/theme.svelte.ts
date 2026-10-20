@@ -1,5 +1,5 @@
 /**
- * Theme preference: follow the system, or force light / dark via <html data-theme>.
+ * Theme preference: light (default), dark, or follow the system, via <html data-theme>.
  */
 export type ThemePreference = 'system' | 'light' | 'dark';
 
@@ -8,9 +8,9 @@ const KEY = 'insider.theme';
 function read(): ThemePreference {
 	try {
 		const v = globalThis.localStorage?.getItem(KEY);
-		return v === 'light' || v === 'dark' ? v : 'system';
+		return v === 'system' || v === 'dark' ? v : 'light';
 	} catch {
-		return 'system';
+		return 'light';
 	}
 }
 

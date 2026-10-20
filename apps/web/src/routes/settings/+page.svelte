@@ -64,9 +64,9 @@
 	bind:value={themeValue}
 	onchange={(v) => theme.set(v)}
 	options={[
-		{ value: 'system', label: 'System' },
 		{ value: 'light', label: 'Light' },
-		{ value: 'dark', label: 'Dark' }
+		{ value: 'dark', label: 'Dark' },
+		{ value: 'system', label: 'System' }
 	]}
 />
 
