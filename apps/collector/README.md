@@ -22,12 +22,15 @@ messages follow through signed upload URLs. The Mac only collects. All analysis 
 | `src/core/connection.ts` | Checks and tests what the Connect window collects; `settings.json` read/write |
 | `src/core/connect-page.ts` | The Connect window's page (a data: URL with a hash-pinned CSP) |
 | `src/core/groups-page.ts` | The Groups window's page (same pattern) and `groupRows()` for its list |
+| `src/core/access-page.ts` | The Full Disk Access window's page (same pattern) and its texts (`accessView`, `accessStatus`) |
+| `src/core/disk-access.ts` | `checkDbAccess()`, and `findAccessHolder()`: which app macOS checks for Full Disk Access |
 | `src/core/api-client.ts` | fetch client with a bearer device token, exponential backoff and a per-request timeout |
 | `src/core/sync-engine.ts` | One tick: config → snapshot → schema guard → read + media re-check → outbox → cleanup → upload messages → upload media |
 | `src/core/config.ts` | Environment variables (see below) |
-| `src/main.ts` | Tray menu, timers, Connect and Groups windows, Full Disk Access prompt, login item |
+| `src/main.ts` | Tray menu, timers, Connect, Groups and Full Disk Access windows, access re-checks, login item |
 | `src/preload.cts` | Connect window preload (CommonJS: sandboxed preloads cannot be ES modules) |
-| `src/groups-preload.cts` | Groups window preload: one read-only `list()` call |
+| `src/groups-preload.cts` | Groups window preload: the read-only `list()` call and `allowAccess()` |
+| `src/access-preload.cts` | Full Disk Access window preload: `info()`, `check()` and its three buttons |
 | `src/token-store.ts` | Device token, encrypted with `safeStorage` under `userData` |
 
 The app stores `outbox.sqlite`, `device-token.bin`, `settings.json` (API URL) and short-lived
@@ -123,9 +126,31 @@ for the network.
 
 ## Full Disk Access
 
-macOS protects `~/Library/Group Containers/…`. Without Full Disk Access, reads fail with `EPERM`,
-and the app shows a dialog with a button that opens
-*System Settings → Privacy & Security → Full Disk Access*.
+macOS protects `~/Library/Group Containers/…`. Without Full Disk Access, reads fail with `EPERM`.
+
+The app keeps one access state (`ok`, `denied` or `missing`) and reads 16 bytes of the database
+to check it: at start, before each sync, every 15 s in the background (also before Connect), and
+every 2 s while the Full Disk Access window is open. So a grant or a revoke shows without a
+restart.
+
+- **Full Disk Access window.** Opens at start when access is denied, and again each time access
+  goes from allowed to denied (never on every check). The tray item *Allow Full Disk Access…* and
+  a button in the Groups window also open it. It shows the icon and name of the app to turn on,
+  *Open System Settings*, *Show in Finder*, what to do when access stays locked, and a live status
+  line. When access works, it closes after 1.5 s and the app syncs and sends the group catalog.
+- **Which app.** macOS checks the app it holds responsible for the process, not the process
+  itself. `findAccessHolder()` guesses it from `ps`: an app opened by launchd is its own holder;
+  otherwise the nearest ancestor that is an app (`X.app/Contents/MacOS/…`, trimmed to the
+  outermost bundle). A child of a `disclaimer` helper (the Claude desktop app uses one) is its own
+  holder. With no match (for example when the shell that started it has exited), the window names
+  "the app you started the collector from".
+- **Texts per case.** Packaged app: turn on Insider Collector, with *Quit & Reopen*. Dev copy
+  (below): turn on Insider Collector, Show in Finder to drag it in, and if it stays locked, remove
+  and add it again, then restart with Ctrl-C. A plain `electron .` from a terminal or editor: turn
+  on that app, with a warning that everything run from it gets the same access, and a pointer to
+  `make collector-real`.
+- Syncing does not stop without access: uploads, heartbeats and media already found need no
+  database. The tray menu shows the access item instead of the sync errors it causes.
 
 macOS grants Full Disk Access **to an app bundle**. A plain `electron .` started from a terminal
 counts as part of that terminal, so the grant would go to the terminal (or to whatever started it).
@@ -136,7 +161,7 @@ signature. It starts it with `open`, so macOS treats it as its own app, listed a
 
 - The fixture needs no permission.
 - For the real database, turn on Insider Collector under Full Disk Access. If it is not listed,
-  drag `.dev/Insider Collector.app` into the list (the dialog's button shows it in Finder).
+  drag `.dev/Insider Collector.app` into the list (the window's *Show in Finder* shows it).
 - The grant is tied to the copy's signature. The copy is rebuilt only when the Electron version
   changes (`.dev/collector-app.stamp`). After that, the old entry can show as on but no longer
   works: remove it (−) and add the new copy.
