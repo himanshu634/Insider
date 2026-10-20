@@ -172,7 +172,8 @@ Without Redis installed, `dev` sets `QUEUE_INLINE=true`: jobs run inside the API
 
 - [x] /v1/ask scaffold (Tool Runner, read-only tools, 8-call cap, number check) (not live-verified)
 - [x] Internal analyst CLI in tools/analyst (Claude Agent SDK 0.3.303, read-only insider tools, no built-in tools or user settings) (not live-verified)
-- [ ] Scrub phone numbers and @mentions from message text before it reaches any LLM (SF-03 follow-up)
+- [x] Scrub phone numbers and @mentions from message text before it reaches any LLM (SF-03 follow-up): `scrubContacts` in `services/api/src/agent/scrub.ts`, applied by `search_messages` to what the model sees and to the number-check evidence
+- [ ] Extraction pipeline: pass message text through `scrubContacts` before the extraction LLM sees it (no extraction LLM call exists yet)
 
 ## 11. Decisions
 
