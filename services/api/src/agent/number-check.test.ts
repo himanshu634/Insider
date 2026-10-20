@@ -25,6 +25,8 @@ describe('uncheckedNumbers', () => {
     expect(uncheckedNumbers('6250 to 9999', ['6250'])).toEqual([9999]));
   test('a list of numbers in compact JSON evidence matches', () =>
     expect(uncheckedNumbers('Castor 6250 to 6450', ['[6250,6450]'])).toEqual([]));
+  test('evidence lists spaced by JSON.stringify indent match, as the precondition requires', () =>
+    expect(uncheckedNumbers('rates 120 and 150', [JSON.stringify([120, 150], null, 1)])).toEqual([]));
   test('a number repeated in the answer is returned once', () =>
     expect(uncheckedNumbers('₹9,999 and ₹9,999', ['6250'])).toEqual([9999]));
   test('unchecked numbers come in the order first seen', () =>

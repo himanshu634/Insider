@@ -14,6 +14,9 @@ export function extractNumbers(text: string): number[] {
  * The numbers of `answer` (at least CHECKED_MIN) that no evidence supports, each once, in the order
  * first seen. An answer number `a` is supported by an evidence number `e` when `e === a` or
  * `Math.round(e) === a`.
+ *
+ * Evidence must separate list items with whitespace or newlines (for example `JSON.stringify(x, null, 1)`),
+ * because grouping-comma removal merges a list item of exactly 3 digits ("[120,150]" becomes "[120150]").
  */
 export function uncheckedNumbers(answer: string, evidence: readonly string[]): number[] {
   const supported = new Set<number>();

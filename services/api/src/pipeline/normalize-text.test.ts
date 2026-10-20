@@ -38,4 +38,7 @@ describe('normalizeDigits', () => {
   it('known limitation: a list item that looks like grouping is merged', () => {
     expect(normalizeDigits('[3,450]')).toBe('[3450]');
   });
+  it('known limitation: a list item of exactly 3 digits is merged with the one before it', () => {
+    expect(normalizeDigits('[120,150]')).toBe('[120150]');
+  });
 });
