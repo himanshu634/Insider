@@ -1,6 +1,6 @@
 /**
- * Insider Collector — Electron main process. Menu-bar only (no Dock icon); the one window is the
- * Connect dialog. All WhatsApp/outbox/API logic lives in ./core (plain Node, unit-tested); this
+ * Insider Collector — Electron main process. Menu-bar only (no Dock icon); the windows are the
+ * Connect dialog and the read-only Groups list. All WhatsApp/outbox/API logic lives in ./core (plain Node, unit-tested); this
  * file is UI glue.
  */
 import { join } from 'node:path';
@@ -11,10 +11,16 @@ import { ApiClient } from './core/api-client.js';
 import { loadConfig, MIN_SYNC_INTERVAL_SECONDS, type CollectorConfig } from './core/config.js';
 import { connectPageUrl } from './core/connect-page.js';
 import { normalizeConnection, readSettings, testConnection, writeSettings } from './core/connection.js';
-import { checkDbAccess, FULL_DISK_ACCESS_URL, type DbAccess } from './core/disk-access.js';
+import {
+  checkDbAccess,
+  FULL_DISK_ACCESS_URL,
+  isPermissionError,
+  type DbAccess,
+} from './core/disk-access.js';
+import { groupRows, groupsPageUrl, type GroupsResult } from './core/groups-page.js';
 import { Outbox } from './core/outbox.js';
 import { removeStaleSnapshots } from './core/snapshot.js';
-import { SyncEngine, type SyncStatus } from './core/sync-engine.js';
+import { readGroupCatalog, SyncEngine, type SyncStatus } from './core/sync-engine.js';
 import { trayIconPng } from './core/tray-icon.js';
 import { loadDeviceToken, saveDeviceToken } from './token-store.js';
 
@@ -31,6 +37,7 @@ let deviceToken: string | undefined;
 let dbAccess: DbAccess = 'ok';
 let setupError: string | null = null;
 let connectWindow: BrowserWindow | null = null;
+let groupsWindow: BrowserWindow | null = null;
 let paused = false;
 let syncTimer: NodeJS.Timeout | null = null;
 const intervals: NodeJS.Timeout[] = [];
@@ -83,6 +90,7 @@ function renderMenu(): void {
   items.push(
     { type: 'separator' },
     { label: deviceToken ? 'Change connection…' : 'Connect…', click: () => openConnectWindow() },
+    { label: 'Groups…', click: () => openGroupsWindow() },
     { label: 'Sync now', enabled: engine !== null && !status?.syncing, click: () => void syncNow() },
     {
       label: paused ? 'Resume syncing' : 'Pause syncing',
@@ -275,6 +283,69 @@ function openConnectWindow(): void {
   void win.loadURL(connectPageUrl());
 }
 
+function openGroupsWindow(): void {
+  if (groupsWindow) {
+    groupsWindow.show();
+    groupsWindow.focus();
+    app.focus({ steal: true });
+    return;
+  }
+  const win = new BrowserWindow({
+    width: 520,
+    height: 600,
+    minWidth: 380,
+    minHeight: 320,
+    fullscreenable: false,
+    show: false,
+    title: 'WhatsApp Groups',
+    webPreferences: {
+      preload: fileURLToPath(new URL('./groups-preload.cjs', import.meta.url)),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  win.removeMenu();
+  win.webContents.on('will-navigate', (event) => event.preventDefault());
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.once('ready-to-show', () => {
+    win.show();
+    app.focus({ steal: true });
+  });
+  win.on('closed', () => {
+    groupsWindow = null;
+  });
+  groupsWindow = win;
+  void win.loadURL(groupsPageUrl());
+}
+
+/** Read the group list from a fresh snapshot. Works before Connect; needs only Full Disk Access. */
+async function listGroups(): Promise<GroupsResult> {
+  try {
+    const groups = await readGroupCatalog(config.waDbPath, join(app.getPath('userData'), 'snapshots'));
+    return { ok: true, groups: groupRows(groups, engine?.config?.watched_group_jids ?? null) };
+  } catch (err) {
+    log('group list failed:', err);
+    if (isPermissionError(err)) {
+      void showFullDiskAccessDialog();
+      return { ok: false, error: 'Insider Collector needs Full Disk Access to read WhatsApp groups.' };
+    }
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { ok: false, error: `WhatsApp database not found at ${config.waDbPath}` };
+    }
+    return { ok: false, error: 'Could not read WhatsApp groups. See the log for details.' };
+  }
+}
+
+function registerGroupsIpc(): void {
+  ipcMain.handle('insider:groups-list', (event): Promise<GroupsResult> | GroupsResult => {
+    if (groupsWindow === null || event.sender !== groupsWindow.webContents) {
+      return { ok: false, error: 'Not allowed' };
+    }
+    return listGroups();
+  });
+}
+
 function fromConnectWindow(event: IpcMainInvokeEvent): boolean {
   return connectWindow !== null && event.sender === connectWindow.webContents;
 }
@@ -318,6 +389,7 @@ async function start(): Promise<void> {
   app.dock?.hide();
   config = loadConfig();
   registerConnectIpc();
+  registerGroupsIpc();
 
   const icon = nativeImage.createFromBuffer(trayIconPng(32), { scaleFactor: 2 });
   icon.setTemplateImage(true);

@@ -21,11 +21,13 @@ messages follow through signed upload URLs. The Mac only collects. All analysis 
 | `src/core/media-uploader.ts` | Waits for WhatsApp to download a file, then sha256 → upload URL → PUT → complete |
 | `src/core/connection.ts` | Checks and tests what the Connect window collects; `settings.json` read/write |
 | `src/core/connect-page.ts` | The Connect window's page (a data: URL with a hash-pinned CSP) |
+| `src/core/groups-page.ts` | The Groups window's page (same pattern) and `groupRows()` for its list |
 | `src/core/api-client.ts` | fetch client with a bearer device token, exponential backoff and a per-request timeout |
 | `src/core/sync-engine.ts` | One tick: config → snapshot → schema guard → read + media re-check → outbox → cleanup → upload messages → upload media |
 | `src/core/config.ts` | Environment variables (see below) |
-| `src/main.ts` | Tray menu, timers, Connect window, Full Disk Access prompt, login item |
+| `src/main.ts` | Tray menu, timers, Connect and Groups windows, Full Disk Access prompt, login item |
 | `src/preload.cts` | Connect window preload (CommonJS: sandboxed preloads cannot be ES modules) |
+| `src/groups-preload.cts` | Groups window preload: one read-only `list()` call |
 | `src/token-store.ts` | Device token, encrypted with `safeStorage` under `userData` |
 
 The app stores `outbox.sqlite`, `device-token.bin`, `settings.json` (API URL) and short-lived
@@ -42,6 +44,15 @@ store the token with `safeStorage` and the URL in `settings.json`, then restart 
 
 The server sends the sender HMAC key in that same device config (`sender_hmac_key`), so the
 packaged app needs no `SENDER_HMAC_KEY`. The key is kept in memory only.
+
+## Groups
+
+*Groups…* in the tray menu opens a read-only list of the WhatsApp groups this Mac can see, with
+member counts, a search box and *Refresh*. Each refresh reads a fresh snapshot, so the list works
+before the Mac is connected (it only needs Full Disk Access). Once the device config has loaded,
+groups the web app watches carry a *Watched* badge. A group WhatsApp stores no name for shows as
+*No name in WhatsApp* with its JID. Choosing which groups to watch stays in the web app
+(Settings → Groups).
 
 ## Media
 

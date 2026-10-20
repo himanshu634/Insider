@@ -6,7 +6,25 @@ import { DEFAULT_READ_LIMIT, WhatsAppReader } from './reader.js';
 import { checkSchema } from './schema-guard.js';
 import { createSnapshot, type Snapshot } from './snapshot.js';
 import { GROUP_JID_SUFFIX } from './whatsapp-schema.js';
-import type { DeviceConfig, GroupCatalogResponse } from './types.js';
+import type { CatalogGroup, DeviceConfig, GroupCatalogResponse } from './types.js';
+
+/**
+ * Every group chat in a fresh snapshot of the WhatsApp database. Needs no device token, so the
+ * Groups window works before the Mac is connected. Each call copies into its own temp dir.
+ */
+export async function readGroupCatalog(waDbPath: string, workDir: string): Promise<CatalogGroup[]> {
+  const snapshot: Snapshot = await createSnapshot(waDbPath, workDir);
+  try {
+    const reader = WhatsAppReader.open(snapshot.dbPath);
+    try {
+      return reader.groups();
+    } finally {
+      reader.close();
+    }
+  } finally {
+    await snapshot.cleanup();
+  }
+}
 
 export interface SyncStatus {
   /** End of the last tick that finished without any error. */
@@ -256,19 +274,7 @@ export class SyncEngine {
 
   /** Send the full group list (from a fresh snapshot) so the web app can pick watched groups. */
   async publishCatalog(): Promise<GroupCatalogResponse> {
-    const snapshot: Snapshot = await createSnapshot(this.opts.waDbPath, this.opts.workDir);
-    let groups;
-    try {
-      const reader = WhatsAppReader.open(snapshot.dbPath);
-      try {
-        groups = reader.groups();
-      } finally {
-        reader.close();
-      }
-    } finally {
-      await snapshot.cleanup();
-    }
-    return this.opts.api.postGroupCatalog(groups);
+    return this.opts.api.postGroupCatalog(await readGroupCatalog(this.opts.waDbPath, this.opts.workDir));
   }
 
   async sendHeartbeat(): Promise<void> {
