@@ -23,4 +23,10 @@ describe('uncheckedNumbers', () => {
     expect(uncheckedNumbers('₹9,999 in Gondal', ['6250'])).toEqual([9999]));
   test('only the invented number of several is returned', () =>
     expect(uncheckedNumbers('6250 to 9999', ['6250'])).toEqual([9999]));
+  test('a list of numbers in compact JSON evidence matches', () =>
+    expect(uncheckedNumbers('Castor 6250 to 6450', ['[6250,6450]'])).toEqual([]));
+  test('a number repeated in the answer is returned once', () =>
+    expect(uncheckedNumbers('₹9,999 and ₹9,999', ['6250'])).toEqual([9999]));
+  test('unchecked numbers come in the order first seen', () =>
+    expect(uncheckedNumbers('9999, 7000, 9999, 8000', [])).toEqual([9999, 7000, 8000]));
 });

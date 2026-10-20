@@ -11,8 +11,9 @@ export function extractNumbers(text: string): number[] {
 }
 
 /**
- * The numbers of `answer` (at least CHECKED_MIN) that no evidence supports. An answer number `a`
- * is supported by an evidence number `e` when `e === a` or `Math.round(e) === a`.
+ * The numbers of `answer` (at least CHECKED_MIN) that no evidence supports, each once, in the order
+ * first seen. An answer number `a` is supported by an evidence number `e` when `e === a` or
+ * `Math.round(e) === a`.
  */
 export function uncheckedNumbers(answer: string, evidence: readonly string[]): number[] {
   const supported = new Set<number>();
@@ -20,5 +21,6 @@ export function uncheckedNumbers(answer: string, evidence: readonly string[]): n
     supported.add(e);
     supported.add(Math.round(e));
   }
-  return extractNumbers(answer).filter((a) => a >= CHECKED_MIN && !supported.has(a));
+  const unchecked = extractNumbers(answer).filter((a) => a >= CHECKED_MIN && !supported.has(a));
+  return [...new Set(unchecked)];
 }

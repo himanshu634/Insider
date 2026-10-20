@@ -27,4 +27,15 @@ describe('normalizeDigits', () => {
   it('keeps commas that are not between two digits', () => {
     expect(normalizeDigits('Rajkot, 1250, up 20')).toBe('Rajkot, 1250, up 20');
   });
+  it('keeps commas between digits that are a list, not grouping', () => {
+    expect(normalizeDigits('[6250,6450]')).toBe('[6250,6450]');
+    expect(normalizeDigits('6250,6450,7000')).toBe('6250,6450,7000');
+  });
+  it('removes the commas of western and Indian grouping alike', () => {
+    expect(normalizeDigits('1,000,000')).toBe('1000000');
+    expect(normalizeDigits('12,34,567')).toBe('1234567');
+  });
+  it('known limitation: a list item that looks like grouping is merged', () => {
+    expect(normalizeDigits('[3,450]')).toBe('[3450]');
+  });
 });

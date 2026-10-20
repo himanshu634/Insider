@@ -11,14 +11,17 @@ export function normalizeForHash(text: string): string {
 
 const GUJARATI_DIGIT = /[૦-૯]/g;
 const DEVANAGARI_DIGIT = /[०-९]/g;
-const COMMA_BETWEEN_DIGITS = /(?<=\d),(?=\d)/g;
+// A grouping comma follows a digit and precedes a 3-digit group that no digit follows, with optional
+// 2-digit groups between: "6,250", "1,000,000" and "1,00,000". The comma of a list like "6250,6450"
+// precedes a 4-digit number, so it stays.
+const GROUPING_COMMA = /(?<=\d),(?=(?:\d{2},)*\d{3}(?!\d))/g;
 
-/** Map Gujarati and Devanagari digits to ASCII and drop commas between digits ("૬,૨૫૦" becomes "6250"). */
+/** Map Gujarati and Devanagari digits to ASCII and drop digit-grouping commas ("૬,૨૫૦" becomes "6250"). */
 export function normalizeDigits(text: string): string {
   return text
     .replace(GUJARATI_DIGIT, (digit) => String(digit.charCodeAt(0) - 0x0ae6))
     .replace(DEVANAGARI_DIGIT, (digit) => String(digit.charCodeAt(0) - 0x0966))
-    .replace(COMMA_BETWEEN_DIGITS, '');
+    .replace(GROUPING_COMMA, '');
 }
 
 export function contentHash(text: string | null | undefined): string | null {
