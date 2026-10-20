@@ -18,7 +18,10 @@ export interface GroupRow {
   watched: boolean | null;
 }
 
-export type GroupsResult = { ok: true; groups: GroupRow[] } | { ok: false; error: string };
+export type GroupsResult =
+  | { ok: true; groups: GroupRow[] }
+  /** needsAccess: macOS blocked the read; the page offers the Full Disk Access window. */
+  | { ok: false; error: string; needsAccess?: boolean };
 
 /** Rows for the window, in reader order (most recent activity first). */
 export function groupRows(groups: readonly CatalogGroup[], watchedJids: readonly string[] | null): GroupRow[] {
@@ -38,6 +41,7 @@ const search = document.getElementById('search');
 const summary = document.getElementById('summary');
 const status = document.getElementById('status');
 const refresh = document.getElementById('refresh');
+const allow = document.getElementById('allow');
 let rows = [];
 
 function el(tag, className, text) {
@@ -72,6 +76,7 @@ function render() {
 
 async function load() {
   refresh.disabled = true;
+  allow.hidden = true;
   status.className = '';
   status.textContent = 'Reading WhatsApp…';
   const res = await window.insider.list();
@@ -82,6 +87,7 @@ async function load() {
     summary.textContent = '';
     status.className = 'error';
     status.textContent = res.error;
+    allow.hidden = !res.needsAccess;
     return;
   }
   rows = res.groups;
@@ -90,6 +96,7 @@ async function load() {
 
 search.addEventListener('input', render);
 refresh.addEventListener('click', load);
+allow.addEventListener('click', () => window.insider.allowAccess());
 load();
 `;
 
@@ -126,6 +133,9 @@ li { display: flex; justify-content: space-between; align-items: center; gap: 12
 #status { padding: 14px 18px; color: var(--muted); }
 #status:empty { display: none; }
 #status.error { color: var(--error); }
+#allow { margin: 0 18px; align-self: flex-start; background: var(--accent); border-color: var(--accent);
+  color: var(--bg); }
+[hidden] { display: none !important; }
 `;
 
 const BODY = `
@@ -139,6 +149,7 @@ const BODY = `
   <div id="summary" aria-live="polite"></div>
 </header>
 <div id="status" role="status"></div>
+<button type="button" id="allow" hidden>Allow Full Disk Access…</button>
 <ul id="list"></ul>
 `;
 

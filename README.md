@@ -129,7 +129,7 @@ Upgrading from the Homebrew Postgres setup: stop the old cluster (`pg_ctl -D .de
 The same commands are Make targets: `make setup`, `make dev`, `make web`, `make collector` and so on. `make help` lists them. Two targets exist only in Make:
 
 - `make dev-web` starts the containers without the collector.
-- `make dev-real` (or `make collector-real` for the collector alone) reads the Mac's real WhatsApp Desktop database instead of the synthetic fixture. The terminal needs Full Disk Access. Set `WA_REAL_DB=<path>` to use another copy.
+- `make dev-real` (or `make collector-real` for the collector alone) reads the Mac's real WhatsApp Desktop database instead of the synthetic fixture. The collector runs as its own app, `.dev/Insider Collector.app`; turn on Full Disk Access for **Insider Collector** (not the terminal). Set `WA_REAL_DB=<path>` to use another copy.
 
 ---
 

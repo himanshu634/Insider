@@ -1,0 +1,28 @@
+# Packaged Insider Collector.app: pnpm --filter @insider/collector package → out/mac-<arch>/
+appId: in.bullagritech.insider.collector
+productName: Insider Collector
+# Electron names the app (and its userData folder) from the bundled package.json. Only the
+# packaged copy gets this productName, so it keeps its own outbox, token and single-instance lock
+# in ~/Library/Application Support/Insider Collector, apart from the dev collector's
+# @insider/collector folder.
+extraMetadata:
+  productName: Insider Collector
+directories:
+  output: out
+# The app needs only the compiled main process and preloads; it has no runtime dependencies.
+files:
+  - package.json
+  - dist/**/*.js
+  - dist/**/*.cjs
+npmRebuild: false
+mac:
+  target: dir
+  category: public.app-category.business
+  # Ad-hoc signature until a Developer ID exists (Phase 5). macOS ties a Full Disk Access grant to
+  # this signature, so each new build needs the grant again.
+  identity: '-'
+  # Ad-hoc signatures have no Team ID, so library validation would refuse Electron's frameworks.
+  hardenedRuntime: false
+  extendInfo:
+    # Menu-bar only: no Dock icon.
+    LSUIElement: true
