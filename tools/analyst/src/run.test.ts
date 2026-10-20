@@ -88,6 +88,13 @@ describe('runAnalyst', () => {
     expect(r.state.closed).toBe(true);
   });
 
+  test("current CLIs report a claude.ai login as 'none' → exit 2", async () => {
+    const r = run([init('none'), assistant('Castor ₹6,250'), success('Castor ₹6,250')]);
+
+    expect(await r.code).toBe(2);
+    expect(r.out()).not.toContain('Castor');
+  });
+
   test('unverified number is flagged', async () => {
     const r = run([init(), assistant('₹9,999'), success('₹9,999')], { evidence: ['6250'] });
 
