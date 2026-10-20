@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { marketTools } from '../src/agent/index.js';
 import { validatorFor } from '../src/contract.js';
-import { commodity, dailyPrice, market } from '../src/db/schema.js';
+import { commodity, dailyPrice, market, waGroup, waMessage } from '../src/db/schema.js';
 import { ASK_FALLBACK } from '../src/routes/ask.js';
 import { setup } from './helpers.js';
 import { scriptedAnthropic, text, toolUse } from './scripted-anthropic.js';
@@ -74,7 +74,41 @@ describe('POST /v1/ask', () => {
       const validate = validatorFor('AskResponse');
       expect(validate(body), JSON.stringify(validate.errors)).toBe(true);
       expect(body.answer).toBe('Castor in Gondal: ₹6,300/q today.');
-      expect(Array.isArray(body.sources)).toBe(true);
+      // The price tool returns no message ids, so there are no sources here.
+      expect(body.sources).toEqual([]);
+      expect(console.warn).not.toHaveBeenCalled();
+    });
+
+    it('200 with message ids as integer sources', async () => {
+      const { client } = scriptedAnthropic([
+        { content: [toolUse('search_messages', { text: 'arenda' }, 'tu1')], stop_reason: 'tool_use' },
+        { content: [text('A trader in Gondal quoted 1260 for arenda.')], stop_reason: 'end_turn' },
+      ]);
+      t = await setup({ anthropic: client });
+      const [group] = await t.db
+        .insert(waGroup)
+        .values({ jid: '120363@g.us', name: 'Gondal Castor Rates', isWatched: true })
+        .returning({ id: waGroup.id });
+      const [message] = await t.db
+        .insert(waMessage)
+        .values({
+          groupId: group!.id,
+          stanzaId: 'm1',
+          senderHash: 'hash-1',
+          senderName: 'Ramesh Patel',
+          sentAt: new Date('2026-10-19T06:00:00Z'),
+          type: 'text',
+          text: 'Gondal arenda 1260-1288',
+        })
+        .returning({ id: waMessage.id });
+
+      const res = await ask(t, { question: 'What are traders saying about arenda?' });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      const validate = validatorFor('AskResponse');
+      expect(validate(body), JSON.stringify(validate.errors)).toBe(true);
+      expect(body).toEqual({ answer: 'A trader in Gondal quoted 1260 for arenda.', sources: [message!.id] });
+      expect(Array.isArray(body.sources) && body.sources.length > 0).toBe(true);
       expect(body.sources.every(Number.isInteger)).toBe(true);
       expect(console.warn).not.toHaveBeenCalled();
     });
