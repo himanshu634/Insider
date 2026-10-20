@@ -40,7 +40,7 @@ The main question it answers: **"What moved today, and where should we buy?"**
 
 - **Read-only.** Insider never sends messages and never talks to WhatsApp's servers. It reads the Mac's local copy of messages already received.
 - **Privacy by default.** Phone numbers are hashed on the Mac before upload. Raw messages are visible only to logged-in team members. Data stays internal and is never resold.
-- **Team-first.** Analysis runs on the server, so the data survives the laptop and everyone sees the same numbers. The UI is mobile-first because the brief gets read in the field.
+- **Team-first.** Pipeline analysis runs on the server, so the data survives the laptop and everyone sees the same numbers. The UI is mobile-first because the brief gets read in the field.
 - **Bilingual.** Gujarati and English labels from day one.
 
 ### First scope

@@ -17,7 +17,7 @@ Source: the "Insider — Scaffolding Plan" doc (2026-10-19), changed in three wa
 | Web app | Daily brief, price board, trends, spreads, feed, review queue, settings | SvelteKit 3 (Svelte 5 runes) SPA, Tailwind 4, TanStack Query, ECharts, openapi-fetch |
 | Contracts | OpenAPI spec is the source of truth; TS types are generated from it and used by API, web, collector and tools | OpenAPI 3.1, openapi-typescript |
 
-The Mac only collects. All analysis runs on the server.
+The collector Mac only collects. Pipeline analysis runs on the server; the internal analyst CLI is a read-only client run on team Macs.
 
 ## 2. Monorepo layout
 
@@ -167,7 +167,11 @@ Without Redis installed, `dev` sets `QUEUE_INLINE=true`: jobs run inside the API
 - [x] Infra: GCS bucket script, systemd units, Nginx config (written, run by a human)
 - [x] `bin/insider` with `dev` and one subcommand per service
 - [x] CI: one workflow, path-filtered jobs for contracts, API (with real Postgres), web, collector (macOS runner), tools
+
+## 10a. Phase 4 checklist (insights + agents)
+
 - [x] /v1/ask scaffold (Tool Runner, read-only tools, 8-call cap, number check)
+- [x] Internal analyst CLI in tools/analyst (Claude Agent SDK 0.3.303, read-only insider tools, no built-in tools or user settings)
 
 ## 11. Decisions
 
