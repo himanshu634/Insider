@@ -9,3 +9,8 @@ allowBuilds:
   electron-winstaller: false
   esbuild: true
   msgpackr-extract: true
+
+# Run build scripts on every install instead of restoring their output from the store. The
+# store drops symlinks, so a restored electron/dist has a broken Electron.app that codesign
+# rejects (bin/insider signs a copy of it for the collector).
+sideEffectsCache: false
