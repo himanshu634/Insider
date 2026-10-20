@@ -7,12 +7,15 @@ import { runAnalyst } from './run.js';
 // SDKMessage-shaped objects: only the fields runAnalyst reads.
 const init = (apiKeySource = 'ANTHROPIC_API_KEY') => ({ type: 'system', subtype: 'init', apiKeySource, tools: [] });
 const assistant = (text: string) => ({ type: 'assistant', message: { content: [{ type: 'text', text }] } });
-const success = (result: string) => ({
+const success = (result: string, extra: { is_error?: boolean; stop_reason?: string | null } = {}) => ({
   type: 'result',
   subtype: 'success',
+  is_error: false,
+  stop_reason: 'end_turn',
   result,
   num_turns: 3,
   total_cost_usd: 0.0412,
+  ...extra,
 });
 
 /** A scripted `query`: yields the messages, then throws `after` if given (as the SDK does after an error result). */
@@ -58,6 +61,21 @@ describe('runAnalyst', () => {
     expect(r.out()).toContain('\n— 3 turns, ~$0.04');
     expect(r.out()).not.toContain('⚠');
     expect(r.state.calls).toEqual([{ prompt: 'Where is castor cheapest?', options }]);
+  });
+
+  test('a success result with is_error carries API-error text → exit 1', async () => {
+    const r = run([init(), success('API Error: 401 invalid x-api-key', { is_error: true })]);
+
+    expect(await r.code).toBe(1);
+    expect(r.out()).toContain('API Error: 401 invalid x-api-key');
+    expect(r.out()).not.toContain('turns, ~$');
+  });
+
+  test.each(['refusal', 'max_tokens'])('stop reason %s → one-line warning, no answer text, exit 1', async (stop) => {
+    const r = run([init(), success('Castor is cheapest at', { stop_reason: stop })], { evidence: ['6250'] });
+
+    expect(await r.code).toBe(1);
+    expect(r.out()).toBe(`stopped: ${stop}\n`);
   });
 
   test('budget error → exit 1', async () => {

@@ -1,6 +1,7 @@
 /**
  * Runs one analyst question through the Agent SDK and turns the message stream into output and an exit code:
- * 0 answered, 1 failed (an error result, a broken tool, a crash), 2 refused to run on a non-API-key login.
+ * 0 answered; 1 failed (an error result, an API error, a refusal or cut-off, a broken tool, a crash);
+ * 2 refused to run on a non-API-key login.
  */
 import type { Options, query } from '@anthropic-ai/claude-agent-sdk';
 import { uncheckedNumbers } from '@insider/api/agent';
@@ -37,16 +38,24 @@ export async function runAnalyst(
           if (block.type === 'text') write(`${block.text}\n`);
         }
       } else if (message.type === 'result') {
-        if (message.subtype === 'success') {
+        if (message.subtype !== 'success') {
+          write(`${message.errors.join('\n')}\n`);
+          code = 1;
+        } else if (message.is_error) {
+          // A turn that ended on an API error (a 401, an overload, no credit): `result` is the error text.
+          write(`${message.result}\n`);
+          code = 1;
+        } else if (message.stop_reason === 'refusal' || message.stop_reason === 'max_tokens') {
+          // A refused or cut-off turn is not an answer, whatever text streamed before it: the run fails.
+          write(`stopped: ${message.stop_reason}\n`);
+          code = 1;
+        } else {
           write(`\n— ${message.num_turns} turns, ~$${message.total_cost_usd.toFixed(2)}\n`);
           const unchecked = uncheckedNumbers(message.result, deps.evidence);
           if (unchecked.length > 0) write(`⚠ unverified numbers: ${unchecked.join(', ')}\n`);
           // A broken tool is our fault: the answer may be the model's "no data" for it, so the run fails.
           for (const f of deps.failures) write(`⚠ tool ${f.tool} failed: ${messageOf(f.error)}\n`);
           code = deps.failures.length > 0 ? 1 : 0;
-        } else {
-          write(`${message.errors.join('\n')}\n`);
-          code = 1;
         }
       }
     }

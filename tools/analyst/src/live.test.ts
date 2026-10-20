@@ -1,7 +1,7 @@
 /**
  * Live smoke test against the real Claude Code binary and the Anthropic API. Skipped unless INSIDER_LIVE_LLM=1;
  * it costs a few cents. Run: INSIDER_LIVE_LLM=1 pnpm --filter @insider/analyst exec vitest --run src/live.test.ts
- * This is the only test that checks `tools: []` against the real binary.
+ * This is the only test that checks `tools: []` and `strictMcpConfig` against the real binary.
  */
 import { createSdkMcpServer, query } from '@anthropic-ai/claude-agent-sdk';
 import { createToolContext, loadConfig } from '@insider/api/agent';
@@ -63,7 +63,8 @@ test.skipIf(process.env.INSIDER_LIVE_LLM !== '1')(
     // The model may write the price with a grouping comma (₹6,250).
     expect(out.replaceAll(',', '')).toContain('6250');
     expect(initTools).toBeDefined();
-    for (const builtIn of ['Bash', 'Write', 'Edit', 'Read']) expect(initTools).not.toContain(builtIn);
+    // No built-in tools and no other MCP server: every tool the session has is an insider tool.
+    expect(initTools!.filter((t) => !t.startsWith('mcp__insider__'))).toEqual([]);
   },
   120_000,
 );

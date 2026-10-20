@@ -48,6 +48,28 @@ test('a missing allowlisted variable is left out, not passed as undefined', () =
   expect(bare.env).toEqual({ ANTHROPIC_API_KEY: 'k' });
 });
 
+test('only the MCP servers passed here, and no transcript on disk', () => {
+  expect(o.strictMcpConfig).toBe(true);
+  expect(o.persistSession).toBe(false);
+});
+
+test('the option set is exactly this', () =>
+  expect(Object.keys(o).sort()).toEqual([
+    'allowedTools',
+    'env',
+    'hooks',
+    'maxBudgetUsd',
+    'maxTurns',
+    'mcpServers',
+    'model',
+    'permissionMode',
+    'persistSession',
+    'settingSources',
+    'strictMcpConfig',
+    'systemPrompt',
+    'tools',
+  ]));
+
 test('every tool call goes through the deny hook', () => {
   expect(o.hooks).toEqual({ PreToolUse: [{ hooks: [denyNonInsider] }] });
 });
@@ -77,6 +99,11 @@ describe('denyNonInsider', () => {
         permissionDecisionReason: 'analyst is read-only: insider tools only',
       },
     });
+  });
+
+  test('an unknown tool on the insider server is denied: names match exactly, not by prefix', async () => {
+    expect(await hook('mcp__insider__evil')).toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny' } });
+    expect(await hook('mcp__insider__get_latest_prices')).toEqual({});
   });
 
   test.each(['Read', 'Edit', 'WebFetch', 'mcp__other__get_latest_prices', 'mcp__insider2__search_messages', 'mcp__insider_x'])(

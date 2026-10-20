@@ -21,7 +21,7 @@ The analyst prints the answer, then a line with the turns used and the approxima
 | Exit code | Meaning |
 | --- | --- |
 | `0` | Answered |
-| `1` | Failed: an error result (turn or budget limit), a broken tool, a crash, or a missing or invalid setting |
+| `1` | Failed: an error result (turn or budget limit), an API error, a refused or cut-off answer (`stopped: refusal`, `stopped: max_tokens`), a broken tool, a crash, or a missing or invalid setting |
 | `2` | Refused to run, because the session didn't use `ANTHROPIC_API_KEY` |
 | `64` | No question given |
 
@@ -42,10 +42,12 @@ The CLI reads the repo's `.env`.
 
 - **No built-in tools.** `tools: []` removes Bash, Read, Write, Edit, web fetch and the other built-in tools. Only the in-process `insider` MCP server is available.
 - **No `~/.claude` settings.** `settingSources: []` loads no user, project or local settings. No one's personal hooks, plugins or permission rules affect the session.
+- **No other MCP servers.** `strictMcpConfig: true` uses only the `insider` server passed in code. The session loads no `.mcp.json`, user-settings or plugin MCP servers.
+- **No transcript on disk.** `persistSession: false` saves no session transcript under `~/.claude/projects`.
 - **Insider tools only.**
   - `allowedTools` auto-approves only the `mcp__insider__*` tools.
   - `permissionMode: 'dontAsk'` denies anything that isn't approved, instead of prompting.
-  - A `PreToolUse` hook denies any tool whose name doesn't start with `mcp__insider__` ("analyst is read-only: insider tools only").
+  - A `PreToolUse` hook denies every tool that isn't exactly one of the insider tool names ("analyst is read-only: insider tools only"). An unknown tool on the insider server is denied too.
   - The session never uses `bypassPermissions`.
 - **Env allowlist.** The Claude Code subprocess gets only `ANTHROPIC_API_KEY`, `PATH` and `HOME`. `DATABASE_URL` and every other variable stay in the CLI process, where the tools run.
 - **Limits.**
@@ -63,4 +65,4 @@ pnpm --filter @insider/analyst check   # type-check, including the imported serv
 INSIDER_LIVE_LLM=1 pnpm --filter @insider/analyst exec vitest --run src/live.test.ts   # live, costs a few cents
 ```
 
-The live test is skipped unless `INSIDER_LIVE_LLM=1`. It is the only test that checks the real binary starts with no built-in tools.
+The live test is skipped unless `INSIDER_LIVE_LLM=1`. It is the only test that checks the real binary starts with only insider tools (no built-in tools and no other MCP servers).

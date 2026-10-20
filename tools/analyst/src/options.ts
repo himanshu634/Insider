@@ -1,7 +1,8 @@
 /**
  * The Agent SDK options for the analyst. The session is read-only: no built-in tools, no settings or hooks
- * from ~/.claude or the repo, only the insider MCP tools, a hook that denies anything else, a turn cap,
- * a spend cap, and a subprocess env that holds only what the Claude Code binary needs.
+ * from ~/.claude or the repo, no other MCP servers, only the insider MCP tools, a hook that denies anything
+ * else, a turn cap, a spend cap, no transcript on disk, and a subprocess env that holds only what the
+ * Claude Code binary needs.
  */
 import type { HookCallback, McpSdkServerConfigWithInstance, Options } from '@anthropic-ai/claude-agent-sdk';
 import { marketTools } from '@insider/api/agent';
@@ -27,9 +28,12 @@ const INSIDER_PREFIX = 'mcp__insider__';
 
 export const INSIDER_TOOL_NAMES: string[] = marketTools.map((t) => INSIDER_PREFIX + t.name);
 
-/** `allowedTools` only auto-approves; this hook is what refuses every tool that is not an insider tool. */
+/**
+ * `allowedTools` only auto-approves; this hook is what refuses every other tool. Names match exactly, so an
+ * unknown tool on the insider server is refused too.
+ */
 export const denyNonInsider: HookCallback = async (input) => {
-  if (input.hook_event_name === 'PreToolUse' && !input.tool_name.startsWith(INSIDER_PREFIX)) {
+  if (input.hook_event_name === 'PreToolUse' && !INSIDER_TOOL_NAMES.includes(input.tool_name)) {
     return {
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
@@ -63,6 +67,10 @@ export function analystOptions(
     settingSources: [],
     maxTurns: 12,
     maxBudgetUsd: o.maxBudgetUsd,
+    // Only the MCP servers passed above: no .mcp.json, user-settings or plugin servers.
+    strictMcpConfig: true,
+    // No transcript of the session is saved under ~/.claude/projects.
+    persistSession: false,
     env,
     hooks: { PreToolUse: [{ hooks: [denyNonInsider] }] },
   };
