@@ -107,19 +107,19 @@ cmd_create_device() {
 cmd_api() {
   need_docker
   bold "API on http://localhost:$API_PORT (container)"
-  exec docker compose up api
+  exec docker compose up --build api
 }
 
 cmd_worker() {
   # BullMQ worker; also registers the IST cron schedules (aggregate, insights, brief, watchdog).
   need_docker
-  exec docker compose up worker
+  exec docker compose up --build worker
 }
 
 cmd_web() {
   need_docker
   bold "Web on http://localhost:$WEB_PORT (container)"
-  exec docker compose up web
+  exec docker compose up --build web
 }
 
 cmd_collector() {
