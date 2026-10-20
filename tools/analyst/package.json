@@ -1,0 +1,25 @@
+{
+  "name": "@insider/analyst",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Internal, read-only analyst CLI on the Claude Agent SDK over the shared market tools",
+  "scripts": {
+    "analyst": "tsx --env-file-if-exists=../../.env src/cli.ts",
+    "check": "tsc --noEmit",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.303",
+    "@anthropic-ai/sdk": "^0.135.0",
+    "@insider/api": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4.19.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
