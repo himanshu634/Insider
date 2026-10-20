@@ -217,6 +217,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/chats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description One row per group that is watched or has messages, most recent activity first, with its last message and today's (IST) message and price counts.
+         *      */
+        get: operations["listChats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/messages/{id}": {
         parameters: {
             query?: never;
@@ -604,6 +622,29 @@ export interface components {
             is_forwarded: boolean;
             /** @description How many groups carried the same content */
             cluster_group_count: number;
+            /** @description Prices and arrivals read from this message (rejected ones left out) */
+            observations: components["schemas"]["PriceObservation"][];
+            media: components["schemas"]["Media"][];
+        };
+        MessagePreview: {
+            sender_name: string | null;
+            /** Format: date-time */
+            sent_at: string;
+            type: components["schemas"]["MessageType"];
+            text: string | null;
+            is_forwarded: boolean;
+        };
+        Chat: {
+            jid: string;
+            name: string;
+            member_count: number | null;
+            region_tag: string | null;
+            primary_commodities: string[];
+            last_message: components["schemas"]["MessagePreview"] | null;
+            /** @description Messages sent since IST midnight */
+            today_count: number;
+            /** @description Prices and arrivals read from today's messages (rejected ones left out) */
+            today_price_count: number;
         };
         MessagePage: {
             items: components["schemas"]["Message"][];
@@ -621,10 +662,8 @@ export interface components {
             /** @enum {string} */
             ocr_status: "pending" | "done" | "failed" | "skipped";
         };
-        MessageDetail: components["schemas"]["Message"] & {
-            observations: components["schemas"]["PriceObservation"][];
-            media: components["schemas"]["Media"][];
-        };
+        /** @description One message; list items already carry its observations and media. */
+        MessageDetail: components["schemas"]["Message"];
         /** @enum {string} */
         ObservationStatus: "auto" | "needs_review" | "approved" | "rejected";
         PriceObservation: {
@@ -1116,6 +1155,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MessagePage"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listChats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Chat list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Chat"][];
                 };
             };
             401: components["responses"]["Unauthorized"];

@@ -1,5 +1,5 @@
 /** Read side for the web app: brief, prices, spreads, insights and the message feed. */
-import { aliasedTable, and, desc, eq, gte, ilike, inArray, lt, lte, max, sql } from 'drizzle-orm';
+import { aliasedTable, and, count, desc, eq, gte, ilike, inArray, lt, lte, max, ne, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 
 import type { Schemas } from '../contract.js';
@@ -17,6 +17,7 @@ import {
   waMessage,
 } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
+import { SCHEDULE_TZ } from '../pipeline/schedule.js';
 import { badRequest, dateParam, decodeCursor, intParam, limitParam, nextCursor, notFound } from '../http.js';
 import { observationQuery, toObservation } from './review.js';
 
@@ -238,20 +239,42 @@ const messageSelect = (db: AppEnv['Variables']['db']) =>
 
 type MessageRow = Awaited<ReturnType<ReturnType<typeof messageSelect>['execute']>>[number];
 
-const toMessage = (r: MessageRow): Schemas['Message'] => ({
-  id: r.message.id,
-  group: { jid: r.groupJid, name: r.groupName },
-  sender_name: r.message.senderName,
-  sent_at: r.message.sentAt.toISOString(),
-  type: r.message.type,
-  text: r.message.text,
-  label: r.label,
-  is_forwarded: r.message.isForwarded,
-  cluster_group_count: Number(r.clusterGroupCount),
-});
+/** Rejected extractions never show next to a message. */
+const shownObservation = ne(priceObservation.status, 'rejected');
+
+/** Messages with the prices read from them and their media, in two batched queries. */
+async function toMessages(db: AppEnv['Variables']['db'], rows: MessageRow[]): Promise<Schemas['Message'][]> {
+  const ids = rows.map((r) => r.message.id);
+  const [observations, media] = ids.length
+    ? await Promise.all([
+        observationQuery(db)
+          .where(and(inArray(priceObservation.messageId, ids), shownObservation))
+          .orderBy(priceObservation.id),
+        db.select().from(waMedia).where(inArray(waMedia.messageId, ids)).orderBy(waMedia.id),
+      ])
+    : [[], []];
+  return rows.map((r) => ({
+    id: r.message.id,
+    group: { jid: r.groupJid, name: r.groupName },
+    sender_name: r.message.senderName,
+    sent_at: r.message.sentAt.toISOString(),
+    type: r.message.type,
+    text: r.message.text,
+    label: r.label,
+    is_forwarded: r.message.isForwarded,
+    cluster_group_count: Number(r.clusterGroupCount),
+    observations: observations.filter((o) => o.obs.messageId === r.message.id).map(toObservation),
+    // Signed read URLs come with the media viewer (Phase 2).
+    media: media
+      .filter((m) => m.messageId === r.message.id)
+      .map((m) => ({ id: m.id, mime: m.mime, url: null, ocr_status: m.ocrStatus })),
+  }));
+}
 
 /** Start of an IST calendar day, as an instant. */
 const istDayStart = (date: string) => new Date(`${date}T00:00:00+05:30`);
+
+const istDay = new Intl.DateTimeFormat('en-CA', { timeZone: SCHEDULE_TZ });
 
 read.get('/v1/messages', async (c) => {
   const q = c.req.query();
@@ -276,7 +299,7 @@ read.get('/v1/messages', async (c) => {
     .orderBy(desc(waMessage.id))
     .limit(limit);
   return c.json({
-    items: rows.map(toMessage),
+    items: await toMessages(c.var.db, rows),
     next_cursor: nextCursor(
       rows.map((r) => r.message.id),
       limit,
@@ -287,14 +310,66 @@ read.get('/v1/messages', async (c) => {
 read.get('/v1/messages/:id', async (c) => {
   const id = intParam(c.req.param('id'));
   const { db } = c.var;
-  const [row] = await messageSelect(db).where(eq(waMessage.id, id));
-  if (!row) throw notFound('Unknown message');
-  const observations = await observationQuery(db).where(eq(priceObservation.messageId, id));
-  const media = await db.select().from(waMedia).where(eq(waMedia.messageId, id));
-  return c.json({
-    ...toMessage(row),
-    observations: observations.map(toObservation),
-    // Signed read URLs come with the media viewer (Phase 2).
-    media: media.map((m) => ({ id: m.id, mime: m.mime, url: null, ocr_status: m.ocrStatus })),
-  } satisfies Schemas['MessageDetail']);
+  const rows = await messageSelect(db).where(eq(waMessage.id, id));
+  if (!rows.length) throw notFound('Unknown message');
+  const [message] = await toMessages(db, rows);
+  return c.json(message! satisfies Schemas['MessageDetail']);
+});
+
+// ---------------------------------------------------------------- chats
+
+read.get('/v1/chats', async (c) => {
+  const { db } = c.var;
+  const todayStart = istDayStart(istDay.format(new Date()));
+  const hasMessages = sql`exists (select 1 from ${waMessage} where ${waMessage.groupId} = ${waGroup.id})`;
+  const [groups, latest, todayCounts, todayPrices] = await Promise.all([
+    db.select().from(waGroup).where(or(eq(waGroup.isWatched, true), hasMessages)),
+    db
+      .selectDistinctOn([waMessage.groupId])
+      .from(waMessage)
+      .orderBy(waMessage.groupId, desc(waMessage.sentAt), desc(waMessage.id)),
+    db
+      .select({ groupId: waMessage.groupId, n: count() })
+      .from(waMessage)
+      .where(gte(waMessage.sentAt, todayStart))
+      .groupBy(waMessage.groupId),
+    db
+      .select({ groupId: waMessage.groupId, n: count() })
+      .from(priceObservation)
+      .innerJoin(waMessage, eq(priceObservation.messageId, waMessage.id))
+      .where(and(gte(waMessage.sentAt, todayStart), shownObservation))
+      .groupBy(waMessage.groupId),
+  ]);
+  const lastBy = new Map(latest.map((m) => [m.groupId, m]));
+  const countIn = (rows: { groupId: number; n: number }[], groupId: number) =>
+    Number(rows.find((r) => r.groupId === groupId)?.n ?? 0);
+
+  const chats = groups.map((g): Schemas['Chat'] => {
+    const last = lastBy.get(g.id);
+    return {
+      jid: g.jid,
+      name: g.name,
+      member_count: g.memberCount,
+      region_tag: g.regionTag,
+      primary_commodities: g.primaryCommodities,
+      last_message: last
+        ? {
+            sender_name: last.senderName,
+            sent_at: last.sentAt.toISOString(),
+            type: last.type,
+            text: last.text,
+            is_forwarded: last.isForwarded,
+          }
+        : null,
+      today_count: countIn(todayCounts, g.id),
+      today_price_count: countIn(todayPrices, g.id),
+    };
+  });
+  // Latest activity first; quiet groups after, by name.
+  chats.sort(
+    (a, b) =>
+      (b.last_message?.sent_at ?? '').localeCompare(a.last_message?.sent_at ?? '') ||
+      a.name.localeCompare(b.name),
+  );
+  return c.json(chats);
 });

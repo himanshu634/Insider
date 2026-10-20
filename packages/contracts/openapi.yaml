@@ -309,6 +309,25 @@ paths:
                 $ref: "#/components/schemas/MessagePage"
         "401": { $ref: "#/components/responses/Unauthorized" }
 
+  /v1/chats:
+    get:
+      tags: [messages]
+      operationId: listChats
+      security: [{ userAuth: [] }]
+      description: >
+        One row per group that is watched or has messages, most recent activity first,
+        with its last message and today's (IST) message and price counts.
+      responses:
+        "200":
+          description: Chat list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Chat"
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
   /v1/messages/{id}:
     get:
       tags: [messages]
@@ -941,7 +960,7 @@ components:
 
     Message:
       type: object
-      required: [id, group, sent_at, type, is_forwarded, cluster_group_count]
+      required: [id, group, sent_at, type, is_forwarded, cluster_group_count, observations, media]
       properties:
         id: { type: integer, format: int64 }
         group: { $ref: "#/components/schemas/GroupRef" }
@@ -957,6 +976,46 @@ components:
         cluster_group_count:
           type: integer
           description: How many groups carried the same content
+        observations:
+          type: array
+          description: Prices and arrivals read from this message (rejected ones left out)
+          items: { $ref: "#/components/schemas/PriceObservation" }
+        media:
+          type: array
+          items: { $ref: "#/components/schemas/Media" }
+
+    MessagePreview:
+      type: object
+      required: [sender_name, sent_at, type, text, is_forwarded]
+      properties:
+        sender_name: { type: [string, "null"] }
+        sent_at: { type: string, format: date-time }
+        type: { $ref: "#/components/schemas/MessageType" }
+        text: { type: [string, "null"] }
+        is_forwarded: { type: boolean }
+
+    Chat:
+      type: object
+      required:
+        [jid, name, member_count, region_tag, primary_commodities, last_message, today_count, today_price_count]
+      properties:
+        jid: { type: string }
+        name: { type: string }
+        member_count: { type: [integer, "null"] }
+        region_tag: { type: [string, "null"] }
+        primary_commodities:
+          type: array
+          items: { type: string }
+        last_message:
+          oneOf:
+            - $ref: "#/components/schemas/MessagePreview"
+            - type: "null"
+        today_count:
+          type: integer
+          description: Messages sent since IST midnight
+        today_price_count:
+          type: integer
+          description: Prices and arrivals read from today's messages (rejected ones left out)
 
     MessagePage:
       type: object
@@ -977,17 +1036,9 @@ components:
         ocr_status: { type: string, enum: [pending, done, failed, skipped] }
 
     MessageDetail:
+      description: One message; list items already carry its observations and media.
       allOf:
         - $ref: "#/components/schemas/Message"
-        - type: object
-          required: [observations, media]
-          properties:
-            observations:
-              type: array
-              items: { $ref: "#/components/schemas/PriceObservation" }
-            media:
-              type: array
-              items: { $ref: "#/components/schemas/Media" }
 
     ObservationStatus:
       type: string
