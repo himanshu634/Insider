@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createToolContext, marketTools } from '../src/agent/index.js';
+import { createToolContext, marketTools, uncheckedNumbers } from '../src/agent/index.js';
 import { commodity, dailyPrice, market, waGroup, waMessage } from '../src/db/schema.js';
 import type { MessageHit } from '../src/queries/messages.js';
 import { setup } from './helpers.js';
@@ -110,10 +110,73 @@ describe('market tools', () => {
   });
 
   it('market tools never return sender_name or jid', async () => {
+    // What the model sees is the serialized return value of `run` (both adapters send it), so that is what is pinned.
     const ctx = createToolContext(t.db, 8);
-    for (const mt of marketTools) await mt.run(ctx, mt.name === 'search_messages' ? { text: 'arenda' } : {});
-    const all = ctx.evidence.join('\n');
-    expect(all).not.toMatch(/Ramesh|120363@g\.us|sender_name|"jid"/);
+    const sent: string[] = [];
+    for (const mt of marketTools) sent.push(JSON.stringify(await mt.run(ctx, mt.name === 'search_messages' ? { text: 'arenda' } : {})));
+    expect(sent.join('\n')).not.toMatch(/Ramesh|120363@g\.us|sender_name|"jid"/);
+    // The evidence is a projection of the same results, so it is clean too.
+    expect(ctx.evidence.join('\n')).not.toMatch(/Ramesh|120363@g\.us|sender_name|"jid"/);
+  });
+
+  describe('number-check evidence', () => {
+    // 64 hex characters with digit runs of 3+ in them: 4966 and 6760.
+    const SENDER_HASH = `0d4966a1c6760e${'f'.repeat(50)}`;
+
+    it('an answer equal to a returned message id is flagged', async () => {
+      // Ids from the test database are small and below the check's floor, so give this message a price-sized id.
+      await t.db.insert(waMessage).values({
+        id: 8123,
+        groupId,
+        stanzaId: 'big-id',
+        senderHash: 'hash-1',
+        sentAt: new Date('2026-10-19T07:00:00Z'),
+        type: 'text',
+        text: 'rate unchanged today',
+      });
+      const ctx = createToolContext(t.db, 8);
+      const out = (await tool('search_messages').run(ctx, { text: 'unchanged' })) as MessageHit[];
+      expect(out.map((h) => h.id)).toEqual([8123]);
+      expect([...ctx.sources]).toEqual([8123]);
+      expect(uncheckedNumbers('Castor is 8123 today.', ctx.evidence)).toEqual([8123]);
+    });
+
+    it('an answer equal to a digit run from a returned sender_hash is flagged', async () => {
+      await t.db.insert(waMessage).values({
+        groupId,
+        stanzaId: 'hashed',
+        senderHash: SENDER_HASH,
+        sentAt: new Date('2026-10-19T07:00:00Z'),
+        type: 'text',
+        text: 'rate unchanged today',
+      });
+      const ctx = createToolContext(t.db, 8);
+      const out = (await tool('search_messages').run(ctx, { text: 'unchanged' })) as MessageHit[];
+      // The model still sees the hash; only the number check ignores it.
+      expect(out[0]!.sender_hash).toBe(SENDER_HASH);
+      expect(uncheckedNumbers('Castor is 4966 and 6760.', ctx.evidence)).toEqual([4966, 6760]);
+    });
+
+    it('message text, the group name and the time still support a number', async () => {
+      const ctx = createToolContext(t.db, 8);
+      await tool('search_messages').run(ctx, { text: 'arenda' });
+      expect(uncheckedNumbers('A trader quoted 1260 to 1288 in 2026.', ctx.evidence)).toEqual([]);
+      expect(ctx.evidence.join('\n')).toContain('Gondal Castor Rates');
+      expect(ctx.evidence.join('\n')).toMatch(/"sent_at"/);
+    });
+
+    it('evidence carries no id, group_id or sender_hash', async () => {
+      const ctx = createToolContext(t.db, 8);
+      for (const mt of marketTools) await mt.run(ctx, mt.name === 'search_messages' ? { text: 'arenda' } : {});
+      expect(ctx.evidence.join('\n')).not.toMatch(/"id"|"group_id"|"sender_hash"|hash-1/);
+    });
+
+    it('price evidence keeps the price and count fields', async () => {
+      const ctx = createToolContext(t.db, 8);
+      await tool('get_latest_prices').run(ctx, { commodity: 'castor' });
+      expect(uncheckedNumbers('Castor in Gondal: 6300, range 6260 to 6340.', ctx.evidence)).toEqual([]);
+      expect(ctx.evidence[0]).toMatch(/"commodity": "castor"[\s\S]*"market": "gondal"[\s\S]*"obs_date": "2026-10-19"/);
+    });
   });
 
   it('validates input with its zod schema', () => {

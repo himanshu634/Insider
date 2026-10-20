@@ -6,8 +6,8 @@
 import { z } from 'zod';
 
 import type { Db } from '../db/client.js';
-import { MAX_SEARCH_LIMIT, searchMessages } from '../queries/messages.js';
-import { latestPrices } from '../queries/prices.js';
+import { MAX_SEARCH_LIMIT, type MessageHit, searchMessages } from '../queries/messages.js';
+import { type LatestPriceRow, latestPrices } from '../queries/prices.js';
 
 const DEFAULT_SEARCH_LIMIT = 10;
 
@@ -16,7 +16,10 @@ export interface ToolContext {
   db: Db;
   /** Counted by the adapters, not by `run`. */
   budget: { used: number; max: number };
-  /** Every tool result as indented JSON: the number check needs list items split by whitespace. */
+  /**
+   * What the number check may count as support: each tool result without its ids and sender hash (see
+   * `priceEvidence` and `messageEvidence`), as indented JSON. The number check needs list items split by whitespace.
+   */
   evidence: string[];
   /** Ids of the messages the tools have returned. */
   sources: Set<number>;
@@ -32,6 +35,30 @@ export interface MarketTool<S extends z.ZodRawShape = z.ZodRawShape> {
   input: z.ZodObject<S>;
   run(ctx: ToolContext, input: z.infer<z.ZodObject<S>>): Promise<unknown>;
 }
+
+/**
+ * The evidence of a price result: the same fields the model sees, named so that a field added to the query later
+ * does not become evidence without a decision.
+ */
+const priceEvidence = (rows: LatestPriceRow[]) =>
+  rows.map((r) => ({
+    commodity: r.commodity,
+    market: r.market,
+    district: r.district,
+    obs_date: r.obs_date,
+    min_per_quintal: r.min_per_quintal,
+    max_per_quintal: r.max_per_quintal,
+    modal_per_quintal: r.modal_per_quintal,
+    source_count: r.source_count,
+    group_count: r.group_count,
+  }));
+
+/**
+ * The evidence of a message result: text, time and group name only. The message id, the group id and the sender hash
+ * are identifiers, not market facts: their digit runs must not make a number in an answer look supported.
+ */
+const messageEvidence = (hits: MessageHit[]) =>
+  hits.map((h) => ({ group_name: h.group_name, sent_at: h.sent_at, text: h.text }));
 
 /** Fixes the input type of each tool from its schema, then widens it for the list. */
 const defineTool = <S extends z.ZodRawShape>(tool: MarketTool<S>): MarketTool => tool;
@@ -51,7 +78,7 @@ const getLatestPrices = defineTool({
   }),
   async run(ctx, input) {
     const rows = await latestPrices(ctx.db, input);
-    ctx.evidence.push(JSON.stringify(rows, null, 1));
+    ctx.evidence.push(JSON.stringify(priceEvidence(rows), null, 1));
     return rows;
   },
 });
@@ -77,7 +104,7 @@ const searchMessagesTool = defineTool({
   async run(ctx, input) {
     const hits = await searchMessages(ctx.db, { ...input, limit: input.limit ?? DEFAULT_SEARCH_LIMIT });
     for (const hit of hits) ctx.sources.add(hit.id);
-    ctx.evidence.push(JSON.stringify(hits, null, 1));
+    ctx.evidence.push(JSON.stringify(messageEvidence(hits), null, 1));
     return hits;
   },
 });

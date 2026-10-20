@@ -37,6 +37,26 @@ describe('POST /v1/ask', () => {
     expect((await ask(t, {})).status).toBe(422);
   });
 
+  it('422 on an empty or whitespace question, with or without a client', async () => {
+    for (const anthropic of [null, scriptedAnthropic([]).client]) {
+      t = await setup({ anthropic });
+      for (const question of ['', '   ', ' \n\t ']) {
+        const res = await ask(t, { question });
+        expect(res.status, JSON.stringify(question)).toBe(422);
+        expect(await res.json()).toEqual({ detail: 'question must not be empty' });
+      }
+      await t.close();
+    }
+    t = undefined;
+  });
+
+  it('a whitespace question never reaches the model', async () => {
+    const scripted = scriptedAnthropic([]);
+    t = await setup({ anthropic: scripted.client });
+    expect((await ask(t, { question: '   ' })).status).toBe(422);
+    expect(scripted.requests).toHaveLength(0);
+  });
+
   describe('with a client', () => {
     beforeEach(() => {
       vi.spyOn(console, 'warn').mockImplementation(() => {});

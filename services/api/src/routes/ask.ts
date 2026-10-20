@@ -16,10 +16,13 @@ export const ASK_FALLBACK =
 export const askRoutes = new Hono<AppEnv>();
 
 askRoutes.post('/v1/ask', body('AskRequest'), async (c) => {
+  const { question } = c.req.valid('json');
+  // An empty question is the caller's mistake whatever the server is set up for, and the API rejects empty text.
+  if (!question.trim()) return c.json({ detail: 'question must not be empty' }, 422);
+
   const client = c.var.anthropic;
   if (!client) return c.json({ detail: 'Ask is not configured (set ANTHROPIC_API_KEY)' }, 501);
 
-  const { question } = c.req.valid('json');
   // A tool that fails throws out of `ask`; app.onError turns it into a 500. That is our fault, not a "no answer".
   const outcome = await ask({ client, db: c.var.db, config: c.var.config }, question);
   if (!outcome.ok) {

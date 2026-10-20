@@ -63,6 +63,7 @@ test.skipIf(process.env.INSIDER_LIVE_LLM !== '1')(
     // The model may write the price with a grouping comma (₹6,250).
     expect(out.replaceAll(',', '')).toContain('6250');
     expect(initTools).toBeDefined();
+    expect(initTools).toContain('mcp__insider__get_latest_prices');
     // No built-in tools and no other MCP server: every tool the session has is an insider tool.
     expect(initTools!.filter((t) => !t.startsWith('mcp__insider__'))).toEqual([]);
   },
