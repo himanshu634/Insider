@@ -1,5 +1,5 @@
 /** Read side for the web app: brief, prices, spreads, insights and the message feed. */
-import { aliasedTable, and, count, desc, eq, gte, ilike, inArray, lt, lte, max, ne, or, sql } from 'drizzle-orm';
+import { aliasedTable, and, count, desc, eq, gte, ilike, inArray, lt, lte, ne, or, sql } from 'drizzle-orm';
 import { Hono } from 'hono';
 
 import type { Schemas } from '../contract.js';
@@ -17,8 +17,9 @@ import {
   waMessage,
 } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
-import { SCHEDULE_TZ } from '../pipeline/schedule.js';
+import { SCHEDULE_TZ, istDayEnd, istDayStart } from '../pipeline/schedule.js';
 import { badRequest, dateParam, decodeCursor, intParam, limitParam, nextCursor, notFound } from '../http.js';
+import { latestPrices } from '../queries/prices.js';
 import { observationQuery, toObservation } from './review.js';
 
 export const read = new Hono<AppEnv>();
@@ -97,52 +98,11 @@ read.get('/v1/brief/:date', async (c) => {
 
 read.get('/v1/prices/latest', async (c) => {
   const { commodity: commoditySlug, district } = c.req.query();
-  const { db } = c.var;
-  const latest = db
-    .select({
-      commodityId: dailyPrice.commodityId,
-      marketId: dailyPrice.marketId,
-      date: max(dailyPrice.date).as('latest_date'),
-    })
-    .from(dailyPrice)
-    .groupBy(dailyPrice.commodityId, dailyPrice.marketId)
-    .as('latest');
-  const rows = await db
-    .select({ dp: dailyPrice, commodity: commodity.slug, market: market.slug, district: market.district })
-    .from(dailyPrice)
-    .innerJoin(
-      latest,
-      and(
-        eq(dailyPrice.commodityId, latest.commodityId),
-        eq(dailyPrice.marketId, latest.marketId),
-        eq(dailyPrice.date, latest.date),
-      ),
-    )
-    .innerJoin(commodity, eq(dailyPrice.commodityId, commodity.id))
-    .innerJoin(market, eq(dailyPrice.marketId, market.id))
-    .where(
-      and(
-        commoditySlug ? eq(commodity.slug, commoditySlug) : undefined,
-        district ? eq(market.district, district) : undefined,
-      ),
-    )
-    .orderBy(commodity.slug, market.slug);
+  const rows = await latestPrices(c.var.db, { commodity: commoditySlug, district });
   // Change vs yesterday / 7-day average is computed by the aggregate job (Phase 4).
   return c.json(
     rows.map(
-      (r): Schemas['LatestPrice'] => ({
-        commodity: r.commodity,
-        market: r.market,
-        district: r.district,
-        obs_date: r.dp.date,
-        min_per_quintal: r.dp.min,
-        max_per_quintal: r.dp.max,
-        modal_per_quintal: r.dp.medianModal,
-        change_vs_yesterday: null,
-        change_vs_7d_avg: null,
-        source_count: r.dp.sourceCount,
-        group_count: r.dp.groupCount,
-      }),
+      (r): Schemas['LatestPrice'] => ({ ...r, change_vs_yesterday: null, change_vs_7d_avg: null }),
     ),
   );
 });
@@ -271,9 +231,6 @@ async function toMessages(db: AppEnv['Variables']['db'], rows: MessageRow[]): Pr
   }));
 }
 
-/** Start of an IST calendar day, as an instant. */
-const istDayStart = (date: string) => new Date(`${date}T00:00:00+05:30`);
-
 const istDay = new Intl.DateTimeFormat('en-CA', { timeZone: SCHEDULE_TZ });
 
 read.get('/v1/messages', async (c) => {
@@ -290,9 +247,7 @@ read.get('/v1/messages', async (c) => {
         // Phase 1: substring match. Postgres full-text (tsvector + GIN) comes with the feed work.
         q.q ? ilike(waMessage.text, `%${q.q}%`) : undefined,
         from ? gte(waMessage.sentAt, istDayStart(from)) : undefined,
-        to
-          ? lt(waMessage.sentAt, new Date(istDayStart(to).getTime() + 24 * 3600 * 1000))
-          : undefined,
+        to ? lt(waMessage.sentAt, istDayEnd(to)) : undefined,
         cursor !== undefined ? lt(waMessage.id, cursor) : undefined,
       ),
     )

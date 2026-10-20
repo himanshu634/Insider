@@ -11,7 +11,7 @@ WA_REAL_DB ?= $(HOME)/Library/Group Containers/group.net.whatsapp.WhatsApp.share
 .DEFAULT_GOAL := help
 
 .PHONY: help setup dev dev-web dev-real up down logs psql import-local-db db redis migrate seed \
-	api worker web collector collector-real require-wa-db test check build gen
+	api worker web collector collector-real require-wa-db test check build gen analyst
 
 help: ## List the targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -87,3 +87,6 @@ build: ## Build every package
 
 gen: ## Regenerate types from packages/contracts/openapi.yaml
 	@$(INSIDER) gen
+
+analyst: ## Ask the internal analyst (Agent SDK): make analyst Q="..."
+	@pnpm --filter @insider/analyst analyst "$(Q)"

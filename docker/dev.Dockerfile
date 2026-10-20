@@ -14,6 +14,7 @@ COPY apps/collector/package.json apps/collector/
 COPY apps/web/package.json apps/web/
 COPY services/api/package.json services/api/
 COPY packages/contracts/package.json packages/contracts/
+COPY tools/analyst/package.json tools/analyst/
 COPY tools/export-importer/package.json tools/export-importer/
 COPY tools/spike/package.json tools/spike/
 RUN --mount=type=cache,id=insider-pnpm-store,target=/root/.local/share/pnpm/store \

@@ -39,8 +39,8 @@ The main question it answers: **"What moved today, and where should we buy?"**
 ### Principles
 
 - **Read-only.** Insider never sends messages and never talks to WhatsApp's servers. It reads the Mac's local copy of messages already received.
-- **Privacy by default.** Phone numbers are hashed on the Mac before upload. Raw messages are visible only to logged-in team members. Data stays internal and is never resold.
-- **Team-first.** Analysis runs on the server, so the data survives the laptop and everyone sees the same numbers. The UI is mobile-first because the brief gets read in the field.
+- **Privacy by default.** Phone numbers are hashed on the Mac before upload. Raw messages are visible only to logged-in team members. `/v1/ask` and the internal analyst send message text to Anthropic's API to answer questions, with phone numbers and @mentions masked. Data stays internal and is never resold.
+- **Team-first.** Pipeline analysis runs on the server, so the data survives the laptop and everyone sees the same numbers. The UI is mobile-first because the brief gets read in the field.
 - **Bilingual.** Gujarati and English labels from day one.
 
 ### First scope
@@ -83,6 +83,7 @@ insider/
   tools/
     spike/             Phase 0 probe of a copy of the WhatsApp DB
     export-importer/   backfill from WhatsApp .txt chat exports
+    analyst/           internal analyst CLI (Claude Agent SDK, read-only)
   infra/               GCS bucket script, systemd units, Nginx config
   bin/insider          Mac command: start one service, or everything in dev mode
   compose.yaml         local dev containers (Postgres, Redis, API, worker, web); docker/ holds the image
@@ -99,6 +100,7 @@ One language (TypeScript), one package manager (pnpm workspaces), one lockfile.
 | Schema | Drizzle ORM + drizzle-kit migrations, Postgres schema `market_intel` | Supabase Postgres (prod + testing) |
 | API | Hono on Node 22, request validation compiled from the OpenAPI spec | Agents VM behind Nginx |
 | Pipeline | BullMQ + Redis (inline mode without Redis), LLM structured output (Gemini; Claude optional) | Agents VM worker |
+| Agents | /v1/ask on the Anthropic SDK Tool Runner; internal analyst CLI on the Claude Agent SDK (tools/analyst) | Agents VM (Ask); team Macs (analyst) |
 | Media | Google Cloud Storage, signed URLs | asia-south1 |
 | Web | SvelteKit 3 (Svelte 5), Tailwind 4, TanStack Query, ECharts | Firebase Hosting |
 

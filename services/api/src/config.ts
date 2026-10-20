@@ -3,6 +3,8 @@ const bool = (v: string | undefined, fallback = false) =>
 
 export const DB_SCHEMA = 'market_intel';
 
+export type AskEffort = 'low' | 'medium' | 'high';
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
   return {
     appVersion: '0.1.0',
@@ -22,6 +24,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     mediaUploadUrlTtlSeconds: Number(env.MEDIA_UPLOAD_URL_TTL_SECONDS ?? 900),
     defaultSyncIntervalSeconds: 90,
     corsOrigins: (env.CORS_ORIGINS ?? 'http://localhost:5173,http://localhost:4173').split(','),
+    // Empty counts as unset: /v1/ask returns 501 without a key.
+    anthropicApiKey: env.ANTHROPIC_API_KEY || undefined,
+    agentModel: env.INSIDER_AGENT_MODEL || 'claude-opus-5-5',
+    askEffort: 'medium' as AskEffort,
+    /** Tool calls one /v1/ask answer may make. */
+    askMaxToolCalls: 8,
   };
 }
 

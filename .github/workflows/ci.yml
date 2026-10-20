@@ -39,6 +39,7 @@ jobs:
               - packages/fixtures/**
             tools:
               - *shared
+              - services/api/**
               - tools/**
 
   contracts:
