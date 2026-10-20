@@ -17,6 +17,7 @@
     "create-device": "tsx src/cli/create-device.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
     "@google-cloud/storage": "^7.14.0",
     "@hono/node-server": "^1.13.7",
     "@insider/contracts": "workspace:*",
@@ -26,7 +27,8 @@
     "drizzle-orm": "^0.44.0",
     "hono": "^4.6.14",
     "postgres": "^3.4.5",
-    "yaml": "^2.6.1"
+    "yaml": "^2.6.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.0",
