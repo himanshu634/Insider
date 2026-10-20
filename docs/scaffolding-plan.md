@@ -46,6 +46,7 @@ insider/
   tools/
     spike/                    Phase 0 probe of a copy of ChatStorage.sqlite
     export-importer/          WhatsApp .txt chat export parser + backfill
+    analyst/                  internal analyst CLI (Claude Agent SDK, read-only)
   infra/                      GCS bucket script, systemd units, Nginx, deploy notes
   bin/insider                 Mac command: start one service, or everything in dev mode
   .github/workflows/ci.yml
@@ -166,6 +167,7 @@ Without Redis installed, `dev` sets `QUEUE_INLINE=true`: jobs run inside the API
 - [x] Infra: GCS bucket script, systemd units, Nginx config (written, run by a human)
 - [x] `bin/insider` with `dev` and one subcommand per service
 - [x] CI: one workflow, path-filtered jobs for contracts, API (with real Postgres), web, collector (macOS runner), tools
+- [x] /v1/ask scaffold (Tool Runner, read-only tools, 8-call cap, number check)
 
 ## 11. Decisions
 
