@@ -24,7 +24,7 @@ Insider gives the team one shared, trustworthy view of the market, built from th
 | **Daily brief (19:00 IST)** | The day's significant price moves, mandi spreads, arrival spikes, conflicting reports and top community news, in one summary |
 | **Price board** | Latest price per commodity × mandi, normalized to ₹/quintal, with the change vs yesterday and vs the 7-day average |
 | **Trends and spreads** | Price history by market, market-to-market spreads, arrivals volumes |
-| **Message feed** | The raw messages, searchable, with the extracted values overlaid |
+| **Chats** | Every watched group as a WhatsApp-style chat, with the prices read from each message shown under it |
 | **Review queue** | Low-confidence extractions checked by a person before they count. Every correction makes the system more accurate |
 
 The main question it answers: **"What moved today, and where should we buy?"**
@@ -64,7 +64,7 @@ Commodities: **castor and groundnut**, plus the mandis the team tracks. More are
 1. **Collect.** A menu-bar app on a Mac linked to WhatsApp copies the local message database every ~90 seconds. It reads new messages from the watched groups and uploads them through an offline-safe outbox.
 2. **Process.** The server de-duplicates forwards, classifies each message (price, arrivals, news, advisory, noise) and extracts structured prices with an LLM (vision for rate-sheet images). It maps names and units to a canonical form and checks the result.
 3. **Aggregate.** Jobs build daily prices per commodity × mandi, detect insights and write the evening brief.
-4. **Read.** The web app shows the brief, prices, trends, feed and review queue.
+4. **Read.** The web app shows the brief, prices, trends, chats and review queue.
 
 ---
 

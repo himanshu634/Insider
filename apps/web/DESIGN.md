@@ -71,7 +71,10 @@ Chart series use `--chart-1` … `--chart-6` and `--chart-grid`.
 - **Space:** 4px grid (Tailwind step `--spacing: 0.25rem`; `p-1` = 4px, `p-4` = 16px).
 - **Radius:** `rounded-sm` 6px (skeletons, segments) · `rounded-md` 8px (controls) ·
   `rounded-lg` 10px (cards, tables, dialogs). Pills only for badges and switches.
-- **Elevation:** `shadow-overlay` only, for dialogs, sheets and toasts.
+- **Elevation:** `shadow-overlay` only, for dialogs, sheets and toasts. One exception: chat
+  bubbles and the date / greeting pills in Chats carry a 1px hairline shadow
+  (`0 1px 0.5px var(--shadow-overlay-color)`), because the thread copies WhatsApp's
+  layout so the team reads it the way they read their phones.
 - **Motion:** `--duration-fast` 120ms, `--duration-base` 160ms, `--duration-slow` 200ms,
   ease-out (`--ease-standard`). Under `prefers-reduced-motion` all transitions and
   animations collapse to 1ms.
@@ -104,6 +107,19 @@ Chart series use `--chart-1` … `--chart-6` and `--chart-grid`.
 
 App-level composites built from these live in `src/lib/components/` (navigation, collector
 badge, page header, loading/error states, insight card, price trend chart).
+
+- **Sidebar** (`sidebar.svelte.ts` + `AppNav collapsed`): the desktop sidebar collapses to a
+  4.5rem icon rail; each icon keeps its `aria-label` and shows its name as a tooltip on hover
+  and focus. The choice is remembered per browser. Phones use the bottom bar instead.
+- **Chats** (`components/chats/`, route `/chats`, which `/feed` redirects to): WhatsApp's
+  anatomy in Mandi Ledger colours. `ChatRow` (round avatar, name, time, preview, a labelled
+  "N prices" pill, never a bare unread-style count), `ChatThread` (day pills, greetings folded
+  into one line, newest at the bottom, older pages load on scroll), `MessageBubble` (tail on
+  the first bubble of a sender's run, time inside the bubble, sender names in text roles that
+  pass 4.5:1), `PriceQuote` (the prices read from a message, as a quoted-reply block that opens
+  `PriceDetails`: a drawer when there is room, a sheet otherwise). Below 1024px it is one pane:
+  the list, then the open chat full screen with the bottom bar hidden. Where WhatsApp has the
+  message box, a bar says Insider only reads.
 
 ## Usage rules
 

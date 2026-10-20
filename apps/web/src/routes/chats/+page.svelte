@@ -10,6 +10,7 @@
 	import LocaleToggle from '#lib/components/LocaleToggle.svelte';
 	import ErrorState from '#lib/components/ErrorState.svelte';
 	import ChatRow from '#lib/components/chats/ChatRow.svelte';
+	import { sidebar } from '#lib/components/sidebar.svelte.js';
 	import ChatThread from '#lib/components/chats/ChatThread.svelte';
 	import PriceDetails from '#lib/components/chats/PriceDetails.svelte';
 
@@ -53,12 +54,15 @@
 
 	const current = $derived<Chat | null>(list.find((c) => c.jid === jid) ?? null);
 
-	// Price details: a right-hand drawer on wide screens, a bottom sheet below that.
 	let picked = $state<Message | null>(null);
 	// Details belong to the open chat; switching chats closes them.
 	const selected = $derived(picked && (jid === 'all' || picked.group.jid === jid) ? picked : null);
-	const wide = new MediaQuery('min-width: 1280px');
-	let sheetOpen = $derived(selected !== null && !wide.current);
+	// Price details: a right-hand drawer only when the thread keeps enough room beside it
+	// (rail collapsed at 1280, or any sidebar at 1536); a bottom sheet otherwise.
+	const xl = new MediaQuery('min-width: 1280px');
+	const xxl = new MediaQuery('min-width: 1536px');
+	const drawer = $derived(xxl.current || (xl.current && sidebar.collapsed));
+	let sheetOpen = $derived(selected !== null && !drawer);
 
 	function open(message: Message) {
 		picked = message;
@@ -80,11 +84,11 @@
 <svelte:head><title>{i18n.t('chats.title')} · {i18n.t('brand')}</title></svelte:head>
 
 <div class="flex min-h-0 flex-1">
-	<!-- Chat list: the whole screen on a phone until a chat opens; a fixed pane on desktop. -->
+	<!-- Chat list: one pane below 1024px (list, then the open chat); beside the thread above. -->
 	<section
 		aria-label={i18n.t('chats.title')}
 		class={[
-			'min-h-0 w-full flex-col overflow-y-auto border-r border-border bg-surface md:flex md:w-[22rem] md:flex-none lg:w-[24rem]',
+			'min-h-0 w-full flex-col overflow-y-auto border-r border-border bg-surface lg:flex lg:w-[22rem] lg:flex-none xl:w-[24rem]',
 			param ? 'hidden' : 'flex'
 		]}
 	>
@@ -115,20 +119,23 @@
 				class="h-full min-w-0 flex-1 border-0 bg-transparent p-0 text-base text-ink placeholder:text-ink-muted focus:ring-0"
 			/>
 		</label>
-		<div role="group" aria-label={i18n.t('chats.filter')} class="flex gap-2 px-3 pt-2.5 pb-1.5">
+		<div role="group" aria-label={i18n.t('chats.filter')} class="flex gap-2 px-3 pt-1 pb-0.5">
 			{#each FILTERS as f (f.value)}
 				<button
 					type="button"
 					aria-pressed={show === f.value}
 					onclick={() => (show = f.value)}
-					class={[
-						'min-h-8 cursor-pointer rounded-full px-3.5 text-sm font-medium',
-						show === f.value
-							? 'bg-primary-soft text-primary'
-							: 'bg-surface-2 text-ink-muted hover:text-ink'
-					]}
+					class="group flex min-h-11 cursor-pointer items-center"
 				>
-					{i18n.t(f.key)}
+					<!-- 32px pill inside a 44px hit area -->
+					<span
+						class={[
+							'inline-flex h-8 items-center rounded-full px-3.5 text-sm font-medium',
+							show === f.value
+								? 'bg-primary-soft text-primary'
+								: 'bg-surface-2 text-ink-muted group-hover:text-ink'
+						]}>{i18n.t(f.key)}</span
+					>
 				</button>
 			{/each}
 		</div>
@@ -183,18 +190,13 @@
 	</section>
 
 	<!-- The open chat: full screen on a phone, the main pane on desktop. -->
-	<div class={['min-h-0 min-w-0 flex-1', param ? 'flex' : 'hidden md:flex']}>
+	<div class={['min-h-0 min-w-0 flex-1', param ? 'flex' : 'hidden lg:flex']}>
 		{#key jid}
-			<ChatThread
-				{jid}
-				chat={current}
-				selectedId={selected?.id ?? null}
-				onopen={open}
-			/>
+			<ChatThread {jid} chat={current} selectedId={selected?.id ?? null} onopen={open} />
 		{/key}
 	</div>
 
-	{#if selected && wide.current}
+	{#if selected && drawer}
 		<aside
 			aria-labelledby="price-details-title"
 			class="flex w-[22.5rem] flex-none flex-col overflow-y-auto border-l border-border bg-surface"
@@ -208,7 +210,7 @@
 	{/if}
 </div>
 
-{#if selected && !wide.current}
+{#if selected && !drawer}
 	<Dialog
 		bind:open={sheetOpen}
 		title={i18n.t('chats.details')}

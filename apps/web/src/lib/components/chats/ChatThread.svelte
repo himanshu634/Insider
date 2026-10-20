@@ -101,12 +101,12 @@
 
 <section class="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-2" aria-label={title}>
 	<header
-		class="flex min-h-15 flex-none items-center gap-2 border-b border-border bg-surface py-2 pr-2 pl-1 md:pl-4"
+		class="flex min-h-15 flex-none items-center gap-2 border-b border-border bg-surface py-2 pr-2 pl-1 lg:pl-4"
 	>
 		<a
 			href={resolve('/chats')}
 			aria-label={i18n.t('chats.back')}
-			class="inline-flex h-11 w-11 flex-none items-center justify-center rounded-full text-ink hover:bg-surface-2 md:hidden"
+			class="inline-flex h-11 w-11 flex-none items-center justify-center rounded-full text-ink hover:bg-surface-2 lg:hidden"
 		>
 			<Icon name="chevronLeft" size={20} />
 		</a>
@@ -207,19 +207,24 @@
 							>
 						</li>
 					{:else if item.kind === 'noise'}
-						<li class="my-1 flex justify-center">
+						<li class="flex justify-center">
+							<!-- 32px pill inside a 44px hit area -->
 							<button
 								type="button"
 								onclick={() => expanded.add(item.key)}
-								class="pill min-h-8 cursor-pointer rounded-lg bg-surface px-3 text-[0.8125rem] text-ink-muted hover:text-ink"
+								class="group flex min-h-11 cursor-pointer items-center"
 							>
-								<span class="num"
-									>{item.messages.length}
-									{item.messages.length === 1 ? 'greeting' : 'greetings'}, {formatTime(
-										item.from
-									)}{item.messages.length > 1 ? `–${formatTime(item.to)}` : ''}.</span
+								<span
+									class="pill inline-flex h-8 items-center gap-1 rounded-lg bg-surface px-3 text-[0.8125rem] text-ink-muted group-hover:text-ink"
 								>
-								<span class="font-medium text-primary">Show</span>
+									<span class="num"
+										>{item.messages.length}
+										{item.messages.length === 1 ? 'greeting' : 'greetings'}, {formatTime(
+											item.from
+										)}{item.messages.length > 1 ? `–${formatTime(item.to)}` : ''}.</span
+									>
+									<span class="font-medium text-primary">Show</span>
+								</span>
 							</button>
 						</li>
 					{:else}

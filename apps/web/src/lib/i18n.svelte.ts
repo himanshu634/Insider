@@ -65,7 +65,7 @@ const en = {
 		'Insights are detected after daily prices build up: big price moves, wide mandi spreads, arrival spikes and reports that disagree with each other.',
 
 	'chats.title': 'Chats',
-	'chats.search': 'Search chats and messages',
+	'chats.search': 'Search chats',
 	'chats.filter': 'Show',
 	'chats.filter.all': 'All',
 	'chats.filter.prices': 'With prices',
@@ -177,7 +177,7 @@ const gu = {
 		'દૈનિક ભાવ ભેગા થાય પછી તારણો મળે છે: મોટા ભાવફેર, મંડીઓ વચ્ચે મોટો તફાવત, આવકમાં ઉછાળો અને એકબીજાથી જુદા પડતા અહેવાલ.',
 
 	'chats.title': 'ચેટ',
-	'chats.search': 'ચેટ અને સંદેશા શોધો',
+	'chats.search': 'ચેટ શોધો',
 	'chats.filter': 'બતાવો',
 	'chats.filter.all': 'બધી',
 	'chats.filter.prices': 'ભાવ વાળી',
