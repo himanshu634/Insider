@@ -17,6 +17,8 @@ export function extractNumbers(text: string): number[] {
  *
  * Evidence must separate list items with whitespace or newlines (for example `JSON.stringify(x, null, 1)`),
  * because grouping-comma removal merges a list item of exactly 3 digits ("[120,150]" becomes "[120150]").
+ * Commas are deliberately not re-spaced inside this function, because grouping commas in message text
+ * ("₹6,250") must keep working.
  */
 export function uncheckedNumbers(answer: string, evidence: readonly string[]): number[] {
   const supported = new Set<number>();
