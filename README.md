@@ -1,31 +1,29 @@
 # Insider
 
-**WhatsApp market intelligence for commodity buying.** Insider reads the trader WhatsApp groups our team already follows. It turns the messages into clean, comparable mandi prices and gives a short evening brief on what moved today and where to buy.
+**WhatsApp market intelligence for commodity buyers.** Insider reads the trader WhatsApp groups you already follow, turns the messages into clean, comparable mandi prices, and writes a short evening brief on what moved today and where to buy.
+
+> **Status: early development.** The scaffold is in place (collector, API, pipeline skeleton, web app, contracts, CI). The collector runs against a synthetic WhatsApp fixture, price extraction with an LLM is not wired up yet, and user login is a development bypass. See [Roadmap](#roadmap).
 
 ---
 
-## Business overview
+## Why
 
-### The problem
-
-Prices for castor, groundnut and other commodities reach the team every day through 10–15 WhatsApp groups of traders, brokers and commission agents. That stream is useful, but hard to act on:
+In Indian agri-commodity trade, prices for castor, groundnut and other crops arrive every day through many WhatsApp groups of traders, brokers and commission agents. That stream is useful, but hard to act on:
 
 - **Too much, mostly noise.** Most messages are greetings, forwards and ads. The rate lists are buried among them.
 - **No common format.** Prices arrive per 20 kg, per quintal or per kg. Commodities and mandis are named in Gujarati, Hindi or Gujlish (એરંડા / divela / castor). Many rate sheets are photos.
 - **Hard to trust.** The same post gets forwarded across groups, rumours circulate, and one wrong number can drive a bad buying decision.
 - **Lives on one phone.** What one person reads does not reach the rest of the team, and there is no history to compare against.
 
-### What Insider does
+## What Insider does
 
-Insider gives the team one shared, trustworthy view of the market, built from the groups it already follows:
-
-| Output | What the team gets |
+| Output | What you get |
 |---|---|
-| **Daily brief (19:00 IST)** | The day's significant price moves, mandi spreads, arrival spikes, conflicting reports and top community news, in one summary |
+| **Daily brief (19:00 IST)** | The day's significant price moves, mandi spreads, arrival spikes, conflicting reports and top news, in one summary |
 | **Price board** | Latest price per commodity × mandi, normalized to ₹/quintal, with the change vs yesterday and vs the 7-day average |
 | **Trends and spreads** | Price history by market, market-to-market spreads, arrivals volumes |
 | **Chats** | Every watched group as a WhatsApp-style chat, with the prices read from each message shown under it |
-| **Review queue** | Low-confidence extractions checked by a person before they count. Every correction makes the system more accurate |
+| **Review queue** | Low-confidence extractions checked by a person before they count |
 
 The main question it answers: **"What moved today, and where should we buy?"**
 
@@ -39,20 +37,17 @@ The main question it answers: **"What moved today, and where should we buy?"**
 ### Principles
 
 - **Read-only.** Insider never sends messages and never talks to WhatsApp's servers. It reads the Mac's local copy of messages already received.
-- **Privacy by default.** Phone numbers are hashed on the Mac before upload. Raw messages are visible only to logged-in team members. `/v1/ask` and the internal analyst send message text to Anthropic's API to answer questions, with phone numbers and @mentions masked. Data stays internal and is never resold.
-- **Team-first.** Pipeline analysis runs on the server, so the data survives the laptop and everyone sees the same numbers. The UI is mobile-first because the brief gets read in the field.
+- **Privacy by default.** Sender phone numbers are HMAC-hashed on the Mac before upload. Before message text reaches an LLM (`/v1/ask`, the analyst CLI), phone numbers and @mentions are masked.
+- **Server-side analysis.** The pipeline runs on the server, so the data survives the laptop and everyone sees the same numbers. The UI is mobile-first because the brief gets read in the field.
 - **Bilingual.** Gujarati and English labels from day one.
-
-### First scope
-
-Commodities: **castor and groundnut**, plus the mandis the team tracks. More are added through the dictionaries without code changes.
+- **Configurable scope.** It starts with castor and groundnut. More commodities and mandis are added through dictionaries, without code changes.
 
 ---
 
 ## How it works
 
 ```
- WhatsApp Desktop (Mac)          Backend (GCP + Supabase)                 Team
+ WhatsApp Desktop (Mac)          Backend                                  Users
 ┌──────────────────────┐   ┌────────────────────────────────────┐   ┌───────────────┐
 │ Insider Collector    │──▶│ Hono ingest API ─▶ BullMQ pipeline │──▶│ SvelteKit web │
 │ (Electron menu-bar)  │   │  dedupe → classify → extract →     │   │ app (phone +  │
@@ -79,11 +74,11 @@ insider/
     api/               Hono API + BullMQ worker; Drizzle owns the schema (Postgres schema market_intel)
   packages/
     contracts/         OpenAPI spec (source of truth) + generated TypeScript types
-    fixtures/          synthetic WhatsApp DB (until Phase 0), golden extraction set later
+    fixtures/          synthetic WhatsApp database for development and tests
   tools/
-    spike/             Phase 0 probe of a copy of the WhatsApp DB
+    spike/             probe of a copy of the WhatsApp database
     export-importer/   backfill from WhatsApp .txt chat exports
-    analyst/           internal analyst CLI (Claude Agent SDK, read-only)
+    analyst/           analyst CLI (Claude Agent SDK, read-only)
   infra/               GCS bucket script, systemd units, Nginx config
   bin/insider          Mac command: start one service, or everything in dev mode
   compose.yaml         local dev containers (Postgres, Redis, API, worker, web); docker/ holds the image
@@ -94,15 +89,15 @@ One language (TypeScript), one package manager (pnpm workspaces), one lockfile.
 
 ### Stack
 
-| Component | Tech | Hosting |
+| Component | Tech | Suggested hosting |
 |---|---|---|
-| Collector | Electron 38, TypeScript, `node:sqlite` | The team's Mac (signed + notarized `.app` in Phase 5) |
-| Schema | Drizzle ORM + drizzle-kit migrations, Postgres schema `market_intel` | Supabase Postgres (prod + testing) |
-| API | Hono on Node 22, request validation compiled from the OpenAPI spec | Agents VM behind Nginx |
-| Pipeline | BullMQ + Redis (inline mode without Redis), LLM structured output (Gemini; Claude optional) | Agents VM worker |
-| Agents | /v1/ask on the Anthropic SDK Tool Runner; internal analyst CLI on the Claude Agent SDK (tools/analyst) | Agents VM (Ask); team Macs (analyst) |
-| Media | Google Cloud Storage, signed URLs | asia-south1 |
-| Web | SvelteKit 3 (Svelte 5), Tailwind 4, TanStack Query, ECharts | Firebase Hosting |
+| Collector | Electron 38, TypeScript, `node:sqlite` | A Mac signed in to WhatsApp Desktop |
+| Schema | Drizzle ORM + drizzle-kit migrations, Postgres schema `market_intel` | Any Postgres (e.g. Supabase) |
+| API | Hono on Node 22, request validation compiled from the OpenAPI spec | Linux VM behind Nginx |
+| Pipeline | BullMQ + Redis (inline mode without Redis), LLM structured output (Gemini; Claude optional) | Same VM, worker process |
+| Agents | `/v1/ask` on the Anthropic SDK Tool Runner; analyst CLI on the Claude Agent SDK (`tools/analyst`) | API VM (Ask); local machine (analyst) |
+| Media | Google Cloud Storage, signed URLs | Any GCS region |
+| Web | SvelteKit (Svelte 5), Tailwind 4, TanStack Query, ECharts | Any static host (e.g. Firebase Hosting) |
 
 ---
 
@@ -120,42 +115,68 @@ bin/insider setup
 bin/insider dev
 ```
 
-`bin/insider dev` builds the dev image if needed, starts the containers (Postgres :54329, Redis :6380, migrations, the API :8000, the job worker, the web app :5173), waits until the API is healthy, and then starts the collector on the Mac against a synthetic WhatsApp fixture. Source folders are mounted into the containers, so the API and the web app reload on save. Ctrl-C stops all of it. Ports bind to 127.0.0.1 only.
+`bin/insider setup` copies [.env.example](.env.example) to `.env`. `bin/insider dev` builds the dev image if needed, starts the containers (Postgres :54329, Redis :6380, migrations, the API :8000, the job worker, the web app :5173), waits until the API is healthy, and then starts the collector on the Mac against the synthetic WhatsApp fixture. Source folders are mounted into the containers, so the API and the web app reload on save. Ctrl-C stops all of it. Ports bind to 127.0.0.1 only.
 
-`bin/insider up` starts the containers in the background (for the packaged collector app), `bin/insider down` stops them, `bin/insider logs` follows their logs and `bin/insider psql` opens a database shell. Register a collector with `bin/insider create-device <name>`. Start one service on its own with `bin/insider <db|redis|migrate|seed|api|worker|web|collector>`. Run `bin/insider help` for the full list, and `bin/insider test` for every test suite (on the Mac).
+Other commands:
 
-Upgrading from the Homebrew Postgres setup: stop the old cluster (`pg_ctl -D .dev/postgres stop`), then run `bin/insider import-local-db` once. It copies the database into the container and leaves `.dev/postgres` as it was.
+| Command | What it does |
+|---|---|
+| `bin/insider up` / `down` | Start the containers in the background / stop them |
+| `bin/insider logs` | Follow the container logs |
+| `bin/insider psql` | Open a database shell |
+| `bin/insider create-device <name>` | Register a collector and print its device token |
+| `bin/insider <db\|redis\|migrate\|seed\|api\|worker\|web\|collector>` | Start one service on its own |
+| `bin/insider test` | Run every test suite (on the Mac) |
+| `bin/insider help` | Full list |
 
-The same commands are Make targets: `make setup`, `make dev`, `make web`, `make collector` and so on. `make help` lists them. Two targets exist only in Make:
+The same commands are Make targets (`make setup`, `make dev`, `make web`, …; `make help` lists them). Two exist only in Make:
 
 - `make dev-web` starts the containers without the collector.
-- `make dev-real` (or `make collector-real` for the collector alone) reads the Mac's real WhatsApp Desktop database instead of the synthetic fixture. The collector runs as its own app, `.dev/Insider Collector.app`; turn on Full Disk Access for **Insider Collector** (not the terminal). Set `WA_REAL_DB=<path>` to use another copy.
+- `make dev-real` (or `make collector-real` for the collector alone) reads the Mac's real WhatsApp Desktop database instead of the fixture. The collector runs as its own app, `.dev/Insider Collector.app`; turn on Full Disk Access for **Insider Collector** (not the terminal). Set `WA_REAL_DB=<path>` to use another copy.
 
 ---
 
 ## Roadmap
 
-| Phase | When | Outcome |
+| Phase | Outcome | Status |
 |---|---|---|
-| 0. Spike | 2 days | Prove the WhatsApp DB is readable; extraction prototype ≥80% accurate |
-| 1. Scaffold | Week 1 | Monorepo, contracts, schema, API stubs, web shell, collector skeleton, CI |
-| 2. Ingestion | Week 2 | Live messages in the web feed within 3 minutes; no loss when offline |
-| 3. Extraction | Weeks 3–4 | Structured prices at ≥90% precision; review queue |
-| 4. Insights | Week 5 | Price board, trends, daily brief every evening |
-| 5. Hardening | Week 6 | Alerts, signed collector, runbook, natural-language Q&A; a week unattended with no gaps |
+| 0. Spike | Prove the WhatsApp database is readable; extraction prototype ≥80% accurate | In progress |
+| 1. Scaffold | Monorepo, contracts, schema, API, web shell, collector core, CI | Done |
+| 2. Ingestion | Live messages in the web feed within 3 minutes; no loss when offline | In progress |
+| 3. Extraction | Structured prices at ≥90% precision; review queue | Not started |
+| 4. Insights | Price board, trends, daily brief every evening; natural-language Q&A | Agent scaffold done |
+| 5. Hardening | Real login, alerts, signed collector, runbook; a week unattended with no gaps | Not started |
 
 Full plan: [docs/scaffolding-plan.md](docs/scaffolding-plan.md).
 
-## Open decisions
-
-1. Web login: reuse Bull Connect auth (recommended) or a separate Supabase Auth project?
-2. Linked WhatsApp number: dedicated SIM (recommended) or an existing team number?
-3. Dedicated always-on Mac from day one, or start on the MacBook?
-4. Brief delivery beyond the web app: email, Telegram or WhatsApp?
-5. First list of commodities and mandis to seed.
-
-## Key risks
+## Known risks
 
 - **WhatsApp encrypts or changes its local database.** The collector checks the schema fingerprint and alerts on any change. The reader module can be swapped for a fallback collector.
-- **Mac asleep or away.** The outbox catches up on wake. Move to an always-on Mac once proven.
+- **Mac asleep or away.** The outbox catches up on wake.
 - **Poor-quality rate-sheet images and rumours.** Vision extraction, human review, source counts and conflict detection.
+
+---
+
+## Responsible use
+
+Insider is an independent project. It is **not affiliated with, endorsed by or supported by WhatsApp or Meta**.
+
+It reads the local message database of a WhatsApp Desktop installation that you control. If you run it, you are responsible for:
+
+- having the right to process the messages of the groups you watch, including telling group members where that is expected;
+- complying with WhatsApp's Terms of Service and the data-protection law that applies to you (for example India's DPDP Act or the GDPR);
+- keeping the collected data secure and not reselling it.
+
+Do not run it on groups or devices you do not own or administer.
+
+## Contributing
+
+Issues and pull requests are welcome. Before you open a PR:
+
+- run `bin/insider test` and the type checks (`pnpm check`);
+- if you change an API, edit [packages/contracts/openapi.yaml](packages/contracts/openapi.yaml) first and regenerate the types (CI fails on drift);
+- never commit real WhatsApp data, chat exports, phone numbers or `.env` files. Use the synthetic fixture in [packages/fixtures](packages/fixtures).
+
+## License
+
+[GNU Affero General Public License v3.0](LICENSE). If you run a modified version as a network service, you must make your source changes available to its users.

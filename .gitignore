@@ -25,3 +25,6 @@ playwright-report/
 apps/collector/dist/
 apps/collector/out/
 services/api/dist/
+
+# Claude Code local state (sessions, worktrees)
+.claude/
