@@ -14,6 +14,7 @@ import { normalizeConnection, readSettings, testConnection, writeSettings } from
 import {
   checkDbAccess,
   FULL_DISK_ACCESS_URL,
+  fullDiskAccessHelp,
   isPermissionError,
   type DbAccess,
 } from './core/disk-access.js';
@@ -124,21 +125,22 @@ function renderMenu(): void {
 async function showFullDiskAccessDialog(): Promise<void> {
   if (fdaDialogShown) return;
   fdaDialogShown = true;
+  const help = fullDiskAccessHelp(process.execPath, app.isPackaged);
   const { response } = await dialog.showMessageBox({
     type: 'warning',
     message: 'Insider Collector needs Full Disk Access',
     detail: [
       'It reads a copy of WhatsApp’s local database to collect messages from watched groups.',
       '',
-      '1. Click “Open System Settings” (Privacy & Security → Full Disk Access).',
-      '2. Turn on “Insider Collector” (use + to add it from Applications if it is not listed).',
-      '3. Quit and reopen Insider Collector.',
+      ...help.steps,
     ].join('\n'),
     buttons: ['Open System Settings', 'Later'],
     defaultId: 0,
     cancelId: 1,
   });
-  if (response === 0) await shell.openExternal(FULL_DISK_ACCESS_URL);
+  if (response !== 0) return;
+  if (help.reveal) shell.showItemInFolder(help.reveal);
+  await shell.openExternal(FULL_DISK_ACCESS_URL);
 }
 
 function clearSyncTimer(): void {

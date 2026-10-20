@@ -125,10 +125,70 @@ cmd_web() {
   exec pnpm --filter @insider/web exec vite dev --port "$WEB_PORT" --strictPort
 }
 
+# macOS grants Full Disk Access per app, and charges a plain `electron .` to the terminal that
+# started it. So the collector runs from a renamed copy of Electron.app, "Insider Collector",
+# opened with `open`: it is then its own entry under Privacy & Security → Full Disk Access.
+# The copy holds only Electron; the code stays in apps/collector and is passed as an argument.
+# An ad-hoc signed app's grant is tied to its code hash, so the copy is rebuilt only when the
+# Electron version changes, and a code change keeps the grant.
+COLLECTOR_APP="$DEV/Insider Collector.app"
+COLLECTOR_APP_ID="local.insider.collector.dev"
+COLLECTOR_ENV=(INSIDER_API_URL INSIDER_DEVICE_TOKEN INSIDER_WA_DB INSIDER_WEB_URL SENDER_HMAC_KEY
+  INSIDER_SYNC_INTERVAL_SECONDS)
+
+ensure_collector_app() {
+  local stamp="$DEV/collector-app.stamp" version src plist
+  version="$(cd "$ROOT/apps/collector" && node -p "require('electron/package.json').version")"
+  [[ -d "$COLLECTOR_APP" && "$(cat "$stamp" 2>/dev/null)" == "$version $COLLECTOR_APP_ID" ]] && return 0
+
+  # require('electron') is the path of Electron.app/Contents/MacOS/Electron
+  src="$(cd "$ROOT/apps/collector" && node -p "require('path').resolve(require('electron'), '../../..')")"
+  bold "Building .dev/Insider Collector.app (Electron $version)"
+  rm -rf "$COLLECTOR_APP"
+  mkdir -p "$DEV"
+  ditto "$src" "$COLLECTOR_APP"
+  plist="$COLLECTOR_APP/Contents/Info.plist"
+  # CFBundleExecutable stays "Electron": app.isPackaged is true for any other executable name.
+  /usr/libexec/PlistBuddy -c "Set :CFBundleName Insider Collector" \
+    -c "Set :CFBundleIdentifier $COLLECTOR_APP_ID" "$plist"
+  /usr/libexec/PlistBuddy -c "Delete :CFBundleDisplayName" "$plist" 2>/dev/null || true
+  /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Insider Collector" "$plist"
+  codesign --force --deep --sign - "$COLLECTOR_APP" 2>/dev/null
+  echo "$version $COLLECTOR_APP_ID" > "$stamp"
+  warn "New app bundle: to read the real WhatsApp database, give \"Insider Collector\" Full Disk Access. If an older entry is listed, remove it (−) and add this one."
+}
+
+# The app runs under launchd, outside this script's process group, so stop it by its path.
+stop_collector_app() {
+  local exe="$COLLECTOR_APP/Contents/MacOS/Electron"
+  pkill -TERM -f "$exe" 2>/dev/null || return 0
+  for _ in $(seq 1 40); do
+    pgrep -f "$exe" >/dev/null || return 0
+    sleep 0.25
+  done
+  pkill -KILL -f "$exe" 2>/dev/null || true
+}
+
 cmd_collector() {
   ensure_fixture_db
-  bold "Collector reading ${INSIDER_WA_DB#"$ROOT"/} → $INSIDER_API_URL"
-  exec pnpm --filter @insider/collector dev
+  ensure_collector_app
+  pnpm --silent --filter @insider/collector build
+  stop_collector_app
+
+  local log="$DEV/collector.log" env=() name
+  for name in "${COLLECTOR_ENV[@]}"; do
+    [[ -n "${!name:-}" ]] && env+=(--env "$name=${!name}")
+  done
+  : > "$log"
+  bold "Collector (Insider Collector.app) reading ${INSIDER_WA_DB#"$ROOT"/} → $INSIDER_API_URL"
+  open -n -W "${env[@]}" --stdout "$log" --stderr "$log" "$COLLECTOR_APP" --args "$ROOT/apps/collector" &
+  local open_pid=$!
+  tail -n +1 -F "$log" 2>/dev/null &
+  local tail_pid=$!
+  trap "stop_collector_app; kill $tail_pid 2>/dev/null; exit 0" INT TERM
+  wait "$open_pid" || true
+  sleep 0.5
+  kill "$tail_pid" 2>/dev/null || true
 }
 
 # --- everything (dev mode) -----------------------------------------------------------------
@@ -220,7 +280,8 @@ Usage: bin/insider <command>
   api                    API dev server on :$API_PORT (Hono, tsx watch)
   worker                 Job worker + IST schedules (BullMQ, needs Redis)
   web                    SvelteKit dev server on :$WEB_PORT
-  collector              Collector menu-bar app (Electron) against the synthetic fixture DB
+  collector              Collector menu-bar app (.dev/Insider Collector.app) against the
+                         synthetic fixture DB
   setup                  Install all dependencies and create .env
   test                   Run every test suite
   gen                    Regenerate types from packages/contracts/openapi.yaml

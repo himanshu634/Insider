@@ -100,13 +100,14 @@ data. It does two things:
 1. If the fixture database does not exist, it builds it with
    `sqlite3 "$INSIDER_WA_DB" < packages/fixtures/chatstorage/synthetic.sql`
    (default `INSIDER_WA_DB=.dev/fixtures/ChatStorage.sqlite`).
-2. It runs `pnpm --filter @insider/collector dev`, which runs `tsc` and then `electron .`.
+2. It runs `tsc`, then opens `.dev/Insider Collector.app` with `apps/collector` as its argument
+   (see [Full Disk Access](#full-disk-access)). The app's output goes to `.dev/collector.log`,
+   which the command prints. Ctrl-C stops the app.
+
+`make collector-real` (or `make dev-real`) does the same with the real WhatsApp database.
 
 The API must be running (`bin/insider api`), with a device whose token matches
 `INSIDER_DEVICE_TOKEN`. The app has no Dock icon. Look for the ring icon in the menu bar.
-
-> `bin/insider collector` still has to be switched from the old Swift command (`swift run`) to the
-> two steps above. Until then, run them by hand from the repo root.
 
 ## Checks
 
@@ -126,10 +127,21 @@ macOS protects `~/Library/Group Containers/…`. Without Full Disk Access, reads
 and the app shows a dialog with a button that opens
 *System Settings → Privacy & Security → Full Disk Access*.
 
-macOS grants Full Disk Access **to an app bundle**. For the real app, that is the packaged
-`Insider Collector.app`. In dev the process is Electron's own binary (or your terminal), so the
-fixture path needs no permission. Do not grant Full Disk Access to Electron or your terminal to
-test against real data. Use the packaged app.
+macOS grants Full Disk Access **to an app bundle**. A plain `electron .` started from a terminal
+counts as part of that terminal, so the grant would go to the terminal (or to whatever started it).
+To avoid that, `bin/insider collector` runs the collector from `.dev/Insider Collector.app`: a copy
+of Electron.app with its name and bundle ID (`local.insider.collector.dev`) changed and an ad-hoc
+signature. It starts it with `open`, so macOS treats it as its own app, listed as
+**Insider Collector**. The copy holds only Electron, and the code stays in `apps/collector`.
+
+- The fixture needs no permission.
+- For the real database, turn on Insider Collector under Full Disk Access. If it is not listed,
+  drag `.dev/Insider Collector.app` into the list (the dialog's button shows it in Finder).
+- The grant is tied to the copy's signature. The copy is rebuilt only when the Electron version
+  changes (`.dev/collector-app.stamp`). After that, the old entry can show as on but no longer
+  works: remove it (−) and add the new copy.
+- `CFBundleExecutable` stays `Electron`, so `app.isPackaged` stays false and `userData` stays
+  `~/Library/Application Support/@insider/collector`.
 
 ## Packaging (Phase 5)
 
