@@ -15,6 +15,8 @@ export type DailyPricePoint = S['DailyPricePoint'];
 export type Message = S['Message'];
 export type MessageLabel = S['MessageLabelValue'];
 export type MessagePage = S['MessagePage'];
+export type MessagePreview = S['MessagePreview'];
+export type Chat = S['Chat'];
 export type PriceObservation = S['PriceObservation'];
 export type ObservationStatus = S['ObservationStatus'];
 export type ObservationReview = S['ObservationReview'];
@@ -49,6 +51,7 @@ export const keys = {
 	dailyPrices: (p: DailyPricesParams) => ['prices', 'daily', clean(p)] as const,
 	insights: (p: InsightsParams = {}) => ['insights', clean(p)] as const,
 	messages: (p: MessagesParams = {}) => ['messages', clean(p)] as const,
+	chats: () => ['chats'] as const,
 	review: (p: ReviewParams = {}) => ['review', clean(p)] as const,
 	reviewAll: () => ['review'] as const,
 	groups: () => ['groups'] as const,
@@ -73,6 +76,8 @@ export const fetchInsights = (query: InsightsParams = {}) =>
 
 export const fetchMessages = (query: MessagesParams = {}) =>
 	unwrap(api.GET('/v1/messages', { params: { query: clean(query) } }));
+
+export const fetchChats = () => unwrap(api.GET('/v1/chats'));
 
 export const fetchReviewQueue = (query: ReviewParams = {}) =>
 	unwrap(api.GET('/v1/review/observations', { params: { query: clean(query) } }));
