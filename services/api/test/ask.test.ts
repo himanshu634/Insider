@@ -11,6 +11,14 @@ import { setup } from './helpers.js';
 // loadConfig({}) ignores INSIDER_AGENT_MODEL and friends in the developer's shell.
 const config = loadConfig({});
 
+/** The `fallback` block the API puts in `content` where one model's output gives way to the next (BetaFallbackBlock). */
+const fallbackBlock = {
+  type: 'fallback',
+  from: { model: 'claude-opus-5-5' },
+  to: { model: 'claude-opus-4-8' },
+  trigger: { type: 'refusal', category: null },
+};
+
 describe('ask', () => {
   let t: Awaited<ReturnType<typeof setup>>;
   let messageId: number;
@@ -110,12 +118,12 @@ describe('ask', () => {
     expect(JSON.stringify(out)).not.toContain('Castor is');
   });
 
-  it('builds the answer from text blocks only, ignoring thinking and fallback blocks', async () => {
+  it('builds the answer from text blocks only, ignoring thinking blocks and a fallback block with no text before it', async () => {
     const { client } = scriptedAnthropic([
       {
         content: [
           { type: 'thinking', thinking: 'The price might be 7777.', signature: 'sig' },
-          { type: 'fallback', model: 'claude-other' },
+          fallbackBlock,
           text('No data for that market.'),
         ],
         stop_reason: 'end_turn',
@@ -123,6 +131,17 @@ describe('ask', () => {
     ]);
     const out = await ask({ client, db: t.db, config }, 'Castor in Mars?');
     expect(out).toEqual({ ok: true, answer: 'No data for that market.', sources: [] });
+  });
+
+  it('text from the refused model before a fallback block fails closed, even when the turn ends with end_turn', async () => {
+    const { client } = scriptedAnthropic([
+      {
+        content: [text('Castor is ₹6,'), fallbackBlock, text('Castor in Gondal: ₹6,300/q today.')],
+        stop_reason: 'end_turn',
+      },
+    ]);
+    const out = await ask({ client, db: t.db, config }, 'Castor price?');
+    expect(out).toEqual({ ok: false, reason: 'refusal', detail: 'refused model wrote text before the fallback' });
   });
 
   it('a final message without text → no_answer', async () => {
@@ -173,6 +192,27 @@ describe('ask', () => {
     expect(spy).toHaveBeenCalledTimes(8);
     const results = requests[1].messages.at(-1).content as Array<{ tool_use_id: string; is_error?: boolean }>;
     expect(results.filter((r) => r.is_error).map((r) => r.tool_use_id)).toEqual(['p8', 'p9']);
+  });
+
+  it('a tool that breaks fails the question instead of becoming a "no data" answer', async () => {
+    vi.spyOn(marketTools[0]!, 'run').mockRejectedValueOnce(new Error('db down'));
+    const { client, requests } = scriptedAnthropic([
+      { content: [toolUse('get_latest_prices', {}, 'tu1')], stop_reason: 'tool_use' },
+      { content: [text('No data.')], stop_reason: 'end_turn' },
+    ]);
+    await expect(ask({ client, db: t.db, config }, 'Castor price?')).rejects.toThrow(/get_latest_prices.*db down/);
+    // The model still saw an error result, as for any tool error.
+    expect(requests[1].messages.at(-1).content[0]).toMatchObject({ tool_use_id: 'tu1', is_error: true });
+  });
+
+  it('a tool that breaks keeps its error as the cause', async () => {
+    const boom = new Error('db down');
+    vi.spyOn(marketTools[1]!, 'run').mockRejectedValueOnce(boom);
+    const { client } = scriptedAnthropic([
+      { content: [toolUse('search_messages', { text: 'arenda' }, 'tu1')], stop_reason: 'tool_use' },
+      { content: [text('No data.')], stop_reason: 'end_turn' },
+    ]);
+    await expect(ask({ client, db: t.db, config }, 'q')).rejects.toMatchObject({ cause: boom });
   });
 
   it('a tool call with invalid input is an error result, not a crash', async () => {
