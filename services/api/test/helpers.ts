@@ -1,3 +1,4 @@
+import type Anthropic from '@anthropic-ai/sdk';
 import { PGlite } from '@electric-sql/pglite';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
@@ -13,12 +14,12 @@ import { hashToken } from '../src/security.js';
 export const DEVICE_TOKEN = 'test-device-token';
 
 /** A fresh in-process Postgres with the real migrations applied, plus the app on top of it. */
-export async function setup() {
+export async function setup(opts: { anthropic?: Anthropic | null } = {}) {
   const client = new PGlite();
   const db = drizzle(client, { schema }) as unknown as Db;
   await migrate(drizzle(client), MIGRATIONS_OPTIONS);
   const config = loadConfig();
-  const app = createApp({ db, queue: inlineQueue(db), config });
+  const app = createApp({ db, queue: inlineQueue(db), config, anthropic: opts.anthropic ?? null });
   await db.insert(schema.collectorDevice).values({ name: 'test-mac', tokenHash: hashToken(DEVICE_TOKEN) });
 
   const request = (path: string, init: RequestInit & { json?: unknown; device?: boolean } = {}) => {

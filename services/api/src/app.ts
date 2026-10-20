@@ -5,6 +5,7 @@ import { HTTPException } from 'hono/http-exception';
 import { requireDevice, requireUser } from './auth.js';
 import type { AppDeps, AppEnv } from './env.js';
 import { admin } from './routes/admin.js';
+import { askRoutes } from './routes/ask.js';
 import { collector } from './routes/collector.js';
 import { read } from './routes/read.js';
 import { review } from './routes/review.js';
@@ -19,6 +20,7 @@ export function createApp(deps: AppDeps) {
     c.set('db', deps.db);
     c.set('queue', deps.queue);
     c.set('config', deps.config);
+    c.set('anthropic', deps.anthropic);
     await next();
   });
 
@@ -33,6 +35,7 @@ export function createApp(deps: AppDeps) {
   app.route('/', read);
   app.route('/', review);
   app.route('/', admin);
+  app.route('/', askRoutes);
 
   app.notFound((c) => c.json({ detail: 'Not found' }, 404));
   app.onError((err, c) => {

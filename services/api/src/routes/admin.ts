@@ -169,7 +169,3 @@ function dictionary<T extends typeof commodity | typeof market | typeof unit>(
 dictionary('/v1/dictionaries/commodities', commodity, 'CommodityInput', toCommodity, fromCommodity as never);
 dictionary('/v1/dictionaries/markets', market, 'MarketInput', toMarket, fromMarket as never);
 dictionary('/v1/dictionaries/units', unit, 'UnitInput', toUnit, fromUnit as never);
-
-admin.post('/v1/ask', body('AskRequest'), (c) =>
-  c.json({ detail: 'Q&A arrives in Phase 4' }, 501),
-);
