@@ -170,8 +170,9 @@ Without Redis installed, `dev` sets `QUEUE_INLINE=true`: jobs run inside the API
 
 ## 10a. Phase 4 checklist (insights + agents)
 
-- [x] /v1/ask scaffold (Tool Runner, read-only tools, 8-call cap, number check)
-- [x] Internal analyst CLI in tools/analyst (Claude Agent SDK 0.3.303, read-only insider tools, no built-in tools or user settings)
+- [x] /v1/ask scaffold (Tool Runner, read-only tools, 8-call cap, number check) (not live-verified)
+- [x] Internal analyst CLI in tools/analyst (Claude Agent SDK 0.3.303, read-only insider tools, no built-in tools or user settings) (not live-verified)
+- [ ] Scrub phone numbers and @mentions from message text before it reaches any LLM (SF-03 follow-up)
 
 ## 11. Decisions
 

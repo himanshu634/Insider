@@ -559,3 +559,12 @@ git commit -m "docs: agent scaffold in README and scaffolding plan"
 ```
 
 - [ ] **Step 4: Report.** List the branch `feat/agent-scaffold`, the commits (`git log --oneline main..`), and that there is no remote, so nothing was pushed and no PR was opened.
+
+## Deviations from this plan (recorded during execution)
+
+- The Agent SDK is pinned to 0.3.303, not 0.3.304: pnpm 11's 24h minimumReleaseAge blocked 0.3.304, and the guard was kept.
+- The number check removes only digit-grouping commas (`/(?<=\d),(?=(?:\d{2},)*\d{3}(?!\d))/g`). Evidence is pretty-printed JSON and excludes ids and hashes.
+- Ask: a non-end_turn stop → no_answer; text before a server-side fallback block → refusal (fail closed); a tool handler failure → ask throws → 500.
+- Analyst: a tool failure → exit 1; an is_error result or a refusal/max_tokens stop → exit 1. Also `strictMcpConfig: true`, `persistSession: false`, an exact-name tool hook, and exit 2 on a non-API-key login (including 'none').
+- SF-03 scope: identity fields only (sender_name, jid). Message bodies are sent verbatim. OPEN follow-up: scrub phone numbers and @mentions from message text before it reaches any LLM.
+- Neither entry point is live-verified yet (see docs/scaffolding-plan.md §10a).
