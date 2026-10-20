@@ -10,7 +10,7 @@ WA_REAL_DB ?= $(HOME)/Library/Group Containers/group.net.whatsapp.WhatsApp.share
 .DEFAULT_GOAL := help
 
 .PHONY: help setup dev dev-web dev-real db redis migrate seed api worker web collector \
-	collector-real require-wa-db test check build gen
+	collector-real collector-app require-wa-db test check build gen
 
 help: ## List the targets
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | \
@@ -54,6 +54,9 @@ collector: ## Collector menu-bar app against the synthetic fixture
 
 collector-real: require-wa-db ## Collector menu-bar app against the real WhatsApp database
 	@INSIDER_WA_DB="$(WA_REAL_DB)" $(INSIDER) collector
+
+collector-app: ## Package Insider Collector.app (ad-hoc signed) into apps/collector/out/
+	@pnpm --filter @insider/collector package
 
 # bin/insider builds the synthetic fixture at INSIDER_WA_DB when the file is missing.
 # Stop first, so it never writes into WhatsApp's own folder.

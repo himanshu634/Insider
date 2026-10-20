@@ -34,8 +34,8 @@ messages follow through signed upload URLs. The Mac only collects. All analysis 
 | `src/token-store.ts` | Device token, encrypted with `safeStorage` under `userData` |
 
 The app stores `outbox.sqlite`, `device-token.bin`, `settings.json` (API URL) and short-lived
-`snapshots/` in Electron's `userData` directory (`~/Library/Application Support/@insider/collector`
-in dev).
+`snapshots/` in Electron's `userData` directory: `~/Library/Application Support/@insider/collector`
+in dev, `~/Library/Application Support/Insider Collector` for the packaged app.
 
 ## Connecting
 
@@ -168,9 +168,34 @@ signature. It starts it with `open`, so macOS treats it as its own app, listed a
 - `CFBundleExecutable` stays `Electron`, so `app.isPackaged` stays false and `userData` stays
   `~/Library/Application Support/@insider/collector`.
 
-## Packaging (Phase 5)
+## Packaging
 
-Packaging is not done yet. Phase 5 will add an electron-builder config (with `LSUIElement`),
-Developer ID signing, hardened runtime and notarization, so that Full Disk Access and launch at
-login attach to a stable, signed bundle. The packaged build must ship `dist/preload.cjs` next to
-`dist/main.js`.
+```sh
+make collector-app        # or: pnpm --filter @insider/collector package
+```
+
+This runs `tsc`, then electron-builder (`electron-builder.yml`), and writes
+`out/mac-<arch>/Insider Collector.app`. The bundle holds only `dist/**/*.js`, the three `.cjs`
+preloads and `package.json`; the app has no runtime dependencies. To install it:
+
+```sh
+ditto "apps/collector/out/mac-arm64/Insider Collector.app" "/Applications/Insider Collector.app"
+open "/Applications/Insider Collector.app"
+```
+
+- Bundle id `in.bullagritech.insider.collector`, `LSUIElement` (no Dock icon), default Electron icon.
+- The bundled `package.json` gets `productName: Insider Collector`, so the packaged app keeps its
+  own `userData` (outbox, token, single-instance lock) and runs next to a dev collector.
+- Without environment variables it reads the real WhatsApp database and uses
+  `http://localhost:8000` until the Connect window saves another URL. To connect it to the local dev
+  API, make a device for it (`pnpm --filter @insider/api create-device <name>`, with `.env`
+  loaded) and enter `http://localhost:8000` and that token in *Connect…*.
+- The signature is **ad-hoc** (no Developer ID yet) and hardened runtime is off, because library
+  validation refuses Electron's frameworks under an ad-hoc signature. macOS ties the Full Disk Access
+  grant to this signature, so after each new build remove *Insider Collector* from the Full Disk
+  Access list (−) and add `/Applications/Insider Collector.app` again.
+- Launch it from Finder or `open`, not by running `Contents/MacOS/Insider Collector` in a terminal:
+  then macOS checks the terminal for Full Disk Access, not the app.
+
+Still to do (Phase 5): an app icon, Developer ID signing with hardened runtime, notarization and a
+DMG, so that the Full Disk Access grant and launch at login survive updates.
