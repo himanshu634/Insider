@@ -50,7 +50,8 @@
 		<aside
 			id="app-sidebar"
 			class={[
-				'sticky top-0 hidden h-dvh flex-col gap-6 border-r border-border bg-surface py-4 md:flex',
+				// z-index keeps the collapsed rail's tooltips above the page beside it.
+				'sticky top-0 z-[var(--z-nav)] hidden h-dvh flex-col gap-6 border-r border-border bg-surface py-4 md:flex',
 				sidebar.collapsed ? 'items-center px-2' : 'px-3'
 			]}
 		>

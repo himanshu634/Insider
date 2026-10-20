@@ -25,26 +25,29 @@
 	class="quote mt-1 mb-0.5 block w-full cursor-pointer rounded-md border-l-4 border-primary bg-primary-soft/60 px-2.5 py-1.5 text-left"
 >
 	{#each observations as o (o.id)}
-		<span class="num flex items-baseline gap-2 text-sm leading-6">
-			<span class="font-semibold">{label(o)}</span>
-			<span class="min-w-0 flex-1 truncate text-ink-muted">{humanizeSlug(o.market)}</span>
+		<!-- Name and market wrap on the left; the figure stays whole on the right. -->
+		<span class="flex flex-wrap items-baseline justify-between gap-x-3 text-sm leading-6">
+			<span class="min-w-0">
+				<span class="font-semibold">{label(o)}</span>
+				<span class="text-ink-muted">{humanizeSlug(o.market)}</span>
+			</span>
 			{#if o.arrivals_quintal != null && o.min_per_quintal == null && o.max_per_quintal == null && o.modal_per_quintal == null}
-				<span class="font-semibold"
+				<span class="num font-semibold whitespace-nowrap"
 					>{formatNumber(o.arrivals_quintal)}
 					<span class="text-xs font-normal text-ink-muted">q arrivals</span></span
 				>
 			{:else}
-				<span class="font-semibold"
+				<span class="num font-semibold whitespace-nowrap"
 					>{formatPriceRange(o)} <span class="text-xs font-normal text-ink-muted">/q</span></span
 				>
 			{/if}
-			{#if o.status === 'needs_review'}
-				<span
-					class="inline-flex h-5 items-center rounded-full bg-warning-soft px-2 text-xs font-medium text-warning"
-					>Needs review</span
-				>
-			{/if}
 		</span>
+		{#if o.status === 'needs_review'}
+			<span
+				class="mb-1 inline-flex h-5 items-center rounded-full bg-warning-soft px-2 text-xs font-medium text-warning"
+				>Needs review</span
+			>
+		{/if}
 	{/each}
 </button>
 

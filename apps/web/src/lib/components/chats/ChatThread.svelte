@@ -13,6 +13,7 @@
 	import { buildThread, dayLabel } from '#lib/chats/thread.js';
 	import { getI18n } from '#lib/i18n.svelte.js';
 	import { formatTime, todayIST } from '#lib/utils/dates.js';
+	import { humanizeSlug } from '#lib/utils/format.js';
 	import { EmptyState, Icon, IconButton, Spinner } from '#lib/ui/index.js';
 	import ErrorState from '#lib/components/ErrorState.svelte';
 	import ChatAvatar from './ChatAvatar.svelte';
@@ -62,7 +63,10 @@
 
 	// Pages arrive newest first; the thread reads oldest first.
 	const messages = $derived.by(() => {
-		const all = (feed.data?.pages.flatMap((p) => p.items) ?? []).toReversed();
+		// Sort by send time: a backfilled message can arrive (and get its id) after newer ones.
+		const all = (feed.data?.pages.flatMap((p) => p.items) ?? []).toSorted(
+			(a, b) => a.sent_at.localeCompare(b.sent_at) || a.id - b.id
+		);
 		return pricesOnly ? all.filter((m) => m.observations.length > 0 || m.media.length > 0) : all;
 	});
 	const items = $derived(
@@ -75,7 +79,8 @@
 		if (!chat) return '';
 		const parts = [];
 		if (chat.member_count) parts.push(`${chat.member_count} members`);
-		if (chat.primary_commodities.length) parts.push(chat.primary_commodities.join(', '));
+		if (chat.primary_commodities.length)
+			parts.push(chat.primary_commodities.map(humanizeSlug).join(', '));
 		if (chat.region_tag) parts.push(chat.region_tag);
 		return parts.join('. ');
 	});
@@ -141,14 +146,20 @@
 			<button
 				type="button"
 				aria-pressed={pricesOnly}
+				aria-label={i18n.t('chats.pricesOnly')}
+				title={i18n.t('chats.pricesOnly')}
 				onclick={() => (pricesOnly = !pricesOnly)}
 				class={[
-					'inline-flex min-h-9 flex-none cursor-pointer items-center gap-1.5 rounded-full px-3 text-sm font-medium',
-					pricesOnly ? 'bg-primary-soft text-primary' : 'bg-surface-2 text-ink-muted hover:text-ink'
+					'inline-flex min-h-11 min-w-11 flex-none cursor-pointer items-center justify-center gap-1.5 rounded-full text-sm font-medium sm:min-h-9 sm:px-3',
+					pricesOnly
+						? 'bg-primary-soft text-primary'
+						: 'text-ink-muted hover:text-ink sm:bg-surface-2'
 				]}
 			>
-				{#if pricesOnly}<Icon name="check" size={16} />{/if}
-				{i18n.t('chats.pricesOnly')}
+				<!-- Phones: an icon toggle so the chat name keeps its room. -->
+				<span class="sm:hidden"><Icon name={pricesOnly ? 'check' : 'chart'} size={20} /></span>
+				{#if pricesOnly}<span class="hidden sm:inline"><Icon name="check" size={16} /></span>{/if}
+				<span class="hidden sm:inline">{i18n.t('chats.pricesOnly')}</span>
 			</button>
 		{/if}
 	</header>

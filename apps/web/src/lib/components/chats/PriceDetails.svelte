@@ -36,7 +36,7 @@
 		{/if}
 	</blockquote>
 
-	<table class="num w-full border-collapse text-sm">
+	<table class="w-full border-collapse text-sm">
 		<thead>
 			<tr class="border-b border-border text-left text-xs font-medium text-ink-muted">
 				<th scope="col" class="py-1.5 font-medium">Commodity</th>
@@ -52,7 +52,7 @@
 						{humanizeSlug(o.commodity)}{o.variety ? ` ${o.variety}` : ''}
 						<span class="block text-ink-muted">{humanizeSlug(o.market)}</span>
 					</td>
-					<td class="py-2.5">
+					<td class="py-2.5 tabular-nums">
 						{formatRawRange(o)}
 						<span class="block text-ink-muted"
 							>{unitLabel(o.unit)}{isUnitCode(o.unit) && UNIT_FACTORS[o.unit] !== 1
@@ -60,7 +60,7 @@
 								: ''}</span
 						>
 					</td>
-					<td class="py-2.5 text-right">
+					<td class="py-2.5 text-right tabular-nums">
 						<b class="font-semibold">
 							{#if o.arrivals_quintal != null && o.min_per_quintal == null && o.max_per_quintal == null && o.modal_per_quintal == null}
 								{formatNumber(o.arrivals_quintal)} q arrivals
