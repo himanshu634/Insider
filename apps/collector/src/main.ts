@@ -191,14 +191,17 @@ async function accessInfo(): Promise<AccessView> {
  * when access just came back, so the caller can sync. A failed check keeps the last state.
  */
 async function refreshAccess(): Promise<boolean> {
-  const before = dbAccess;
+  let next: DbAccess;
   try {
-    dbAccess = await checkDbAccess(config.waDbPath);
+    next = await checkDbAccess(config.waDbPath);
   } catch (err) {
     log('access check failed:', err);
     return false;
   }
-  if (dbAccess === before) return false;
+  // Compared after the await: checks can overlap, and only one of them may act on a change.
+  if (next === dbAccess) return false;
+  const before = dbAccess;
+  dbAccess = next;
   log(`WhatsApp database access: ${before} → ${dbAccess}`);
   renderMenu();
   if (dbAccess === 'denied') {
