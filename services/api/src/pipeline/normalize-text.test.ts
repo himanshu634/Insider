@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { contentHash, normalizeForHash } from './normalize-text.js';
+import { contentHash, normalizeDigits, normalizeForHash } from './normalize-text.js';
 
 describe('content hash', () => {
   it('hashes forwards and emoji variants alike', () => {
@@ -12,5 +12,19 @@ describe('content hash', () => {
   });
   it('lowercases and collapses whitespace', () => {
     expect(normalizeForHash('  Castor\n\n RATE ')).toBe('castor rate');
+  });
+});
+
+describe('normalizeDigits', () => {
+  it('maps Gujarati and Devanagari digits to ASCII', () => {
+    expect(normalizeDigits('એરંડા ૧૨૫૦-૧૨૯૦')).toBe('એરંડા 1250-1290');
+    expect(normalizeDigits('₹6,250 and १००')).toBe('₹6250 and 100');
+  });
+  it('removes commas between digits, in any grouping and in any script', () => {
+    expect(normalizeDigits('1,00,000')).toBe('100000');
+    expect(normalizeDigits('₹૬,૨૫૦')).toBe('₹6250');
+  });
+  it('keeps commas that are not between two digits', () => {
+    expect(normalizeDigits('Rajkot, 1250, up 20')).toBe('Rajkot, 1250, up 20');
   });
 });
