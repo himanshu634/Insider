@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { loadConfig } from '../src/config.js';
 import { collectorDevice } from '../src/db/schema.js';
-import { collectorWatchdog } from '../src/pipeline/tasks.js';
+import { collectorWatchdog, handlers } from '../src/pipeline/tasks.js';
 import { setup } from './helpers.js';
 
 const GROUP = '120363000000000009@g.us';
@@ -58,5 +58,12 @@ describe('collector config, catalog and heartbeat', () => {
     expect(await collectorWatchdog(t.db)).toHaveLength(1);
     const [device] = await t.db.select().from(collectorDevice).where(eq(collectorDevice.name, 'test-mac'));
     expect(device!.status).toBe('silent');
+  });
+
+  it('watchdog runs with the job data the worker passes', async () => {
+    await t.db.update(collectorDevice).set({ lastHeartbeatAt: new Date(Date.now() - 45 * 60_000) });
+    // The worker and the inline queue call every handler as handler(db, job.data); schedulers send {}.
+    const handler = handlers['collector-watchdog'] as (db: typeof t.db, data: unknown) => Promise<number[]>;
+    expect(await handler(t.db, {})).toHaveLength(1);
   });
 });

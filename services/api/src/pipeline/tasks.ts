@@ -75,8 +75,11 @@ export async function generateInsights(_db: Db) {}
 export async function generateDailyBrief(_db: Db) {}
 export async function proposeDictionaryAliases(_db: Db) {}
 
-/** Mark devices silent after 30 minutes without a heartbeat. Returns the ids marked. */
-export async function collectorWatchdog(db: Db, now = new Date()): Promise<number[]> {
+/**
+ * Mark devices silent after 30 minutes without a heartbeat. Returns the ids marked.
+ * The second parameter is the job data ({} from the scheduler), so `now` comes third.
+ */
+export async function collectorWatchdog(db: Db, _data?: unknown, now = new Date()): Promise<number[]> {
   const cutoff = new Date(now.getTime() - WATCHDOG_SILENCE_MS);
   const silent = await db
     .update(collectorDevice)
