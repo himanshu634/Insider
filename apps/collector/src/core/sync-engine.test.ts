@@ -224,6 +224,29 @@ describe('SyncEngine.tick', () => {
     expect(readdirSync(workDir)).toEqual([]);
   });
 
+  it('checks the schema when no group is watched yet', async () => {
+    api.config.watched_group_jids = [];
+    const e = engine();
+    const status = await e.tick();
+    expect(status.error).toBeNull();
+    expect(status.schemaOk).toBe(true);
+    expect(status.schemaFingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(api.uploaded).toHaveLength(0);
+    expect(readdirSync(workDir)).toEqual([]);
+    await e.sendHeartbeat();
+    expect(api.heartbeats[0]).toMatchObject({ schema_ok: true, schema_fingerprint: status.schemaFingerprint });
+  });
+
+  it('reports a schema mismatch when no group is watched yet', async () => {
+    api.config.watched_group_jids = [];
+    execOnFixture(dbPath, 'ALTER TABLE ZWAMESSAGE DROP COLUMN ZFLAGS;');
+    const status = await engine().tick();
+    expect(status.schemaOk).toBe(false);
+    expect(status.missingColumns).toEqual(['ZWAMESSAGE.ZFLAGS']);
+    expect(status.error).toMatch(/schema mismatch/);
+    expect(readdirSync(workDir)).toEqual([]);
+  });
+
   it('does nothing while the server has paused the device', async () => {
     api.config.paused = true;
     const status = await engine().tick();
@@ -291,6 +314,7 @@ describe('SyncEngine.tick', () => {
     api.config.sender_hmac_key = '';
     const status = await engine({ senderHmacKey: undefined }).tick();
     expect(status.error).toMatch(/sender HMAC key/);
+    expect(status.schemaOk).toBe(true);
     expect(api.uploaded).toHaveLength(0);
   });
 

@@ -79,7 +79,7 @@ function describeError(err: unknown, waDbPath: string): string {
 
 /**
  * One tick: device config → snapshot → schema guard → read new messages of watched groups and
- * re-check media still waiting for its file → outbox (+ checkpoints + pending media, one
+ * re-check media still waiting for its file (with nothing to read, only the schema guard runs) → outbox (+ checkpoints + pending media, one
  * transaction) → delete the snapshot → upload messages in batches → upload media.
  * Ticks never overlap; calling tick() while one runs returns the running tick.
  */
@@ -168,12 +168,15 @@ export class SyncEngine {
         const key = config.sender_hmac_key || this.opts.senderHmacKey;
         if (!key) {
           errors.push('No sender HMAC key from the server (or SENDER_HMAC_KEY); not reading messages');
-        } else if (watched.length > 0 || outbox.media.pendingItemPksWithoutPath().length > 0) {
-          try {
-            await this.collect(watched, key);
-          } catch (err) {
-            errors.push(describeError(err, this.opts.waDbPath));
-          }
+        }
+        const work = watched.length > 0 || outbox.media.pendingItemPksWithoutPath().length > 0;
+        try {
+          if (key && work) await this.collect(watched, key);
+          // Nothing to read: still check the schema, so the heartbeat reports it before any
+          // group is watched.
+          else await this.checkSnapshotSchema();
+        } catch (err) {
+          errors.push(describeError(err, this.opts.waDbPath));
         }
       }
 
@@ -218,13 +221,7 @@ export class SyncEngine {
         senderHmacKey,
         ...(this.opts.selfJid ? { selfJid: this.opts.selfJid } : {}),
       });
-      const schema = checkSchema(reader.database);
-      this.state.schemaOk = schema.ok;
-      this.state.schemaFingerprint = schema.fingerprint;
-      this.state.missingColumns = schema.missing;
-      if (!schema.ok) {
-        throw new Error(`WhatsApp schema mismatch; missing ${schema.missing.join(', ')}`);
-      }
+      this.recordSchema(reader);
       const paths = reader.mediaLocalPaths(outbox.media.pendingItemPksWithoutPath());
       outbox.media.updatePendingPaths(paths, this.now());
       if (watched.length > 0) {
@@ -238,6 +235,32 @@ export class SyncEngine {
     } finally {
       reader?.close();
       await snapshot.cleanup();
+    }
+  }
+
+  /** Snapshot → schema guard only (no messages read). The snapshot is always deleted. */
+  private async checkSnapshotSchema(): Promise<void> {
+    const snapshot = await createSnapshot(this.opts.waDbPath, this.opts.workDir);
+    try {
+      const reader = WhatsAppReader.open(snapshot.dbPath);
+      try {
+        this.recordSchema(reader);
+      } finally {
+        reader.close();
+      }
+    } finally {
+      await snapshot.cleanup();
+    }
+  }
+
+  /** Keep the schema check in the status (for the heartbeat); throws on a mismatch. */
+  private recordSchema(reader: WhatsAppReader): void {
+    const schema = checkSchema(reader.database);
+    this.state.schemaOk = schema.ok;
+    this.state.schemaFingerprint = schema.fingerprint;
+    this.state.missingColumns = schema.missing;
+    if (!schema.ok) {
+      throw new Error(`WhatsApp schema mismatch; missing ${schema.missing.join(', ')}`);
     }
   }
 
