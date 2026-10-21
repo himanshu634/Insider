@@ -134,12 +134,20 @@ COLLECTOR_ENV=(INSIDER_API_URL INSIDER_DEVICE_TOKEN INSIDER_WA_DB INSIDER_WEB_UR
   INSIDER_SYNC_INTERVAL_SECONDS)
 
 ensure_collector_app() {
-  local stamp="$DEV/collector-app.stamp" version src plist
+  local stamp="$DEV/collector-app.stamp" version src plist pkg fix out
   version="$(cd "$ROOT/apps/collector" && node -p "require('electron/package.json').version")"
   [[ -d "$COLLECTOR_APP" && "$(cat "$stamp" 2>/dev/null)" == "$version $COLLECTOR_APP_ID" ]] && return 0
 
   # require('electron') is the path of Electron.app/Contents/MacOS/Electron
   src="$(cd "$ROOT/apps/collector" && node -p "require('path').resolve(require('electron'), '../../..')")"
+  pkg="$(cd "$ROOT/apps/collector" && node -p "require('path').dirname(require.resolve('electron/package.json'))")"
+  fix="rm -rf \"$pkg/dist\" \"$pkg/path.txt\" && node \"$pkg/install.js\""
+  # pnpm's side-effects cache restores Electron.app with its framework symlinks turned into
+  # folders (pnpm-workspace.yaml now turns that cache off). codesign rejects such a bundle.
+  [[ -L "$src/Contents/Frameworks/Electron Framework.framework/Versions/Current" ]] ||
+    die "Electron.app in node_modules has lost its framework symlinks, so it cannot be signed.
+  Reinstall Electron, then run this command again:
+  $fix"
   bold "Building .dev/Insider Collector.app (Electron $version)"
   rm -rf "$COLLECTOR_APP"
   mkdir -p "$DEV"
@@ -150,7 +158,13 @@ ensure_collector_app() {
     -c "Set :CFBundleIdentifier $COLLECTOR_APP_ID" "$plist"
   /usr/libexec/PlistBuddy -c "Delete :CFBundleDisplayName" "$plist" 2>/dev/null || true
   /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string Insider Collector" "$plist"
-  codesign --force --deep --sign - "$COLLECTOR_APP" 2>/dev/null
+  # codesign prints "replacing existing signature" on success, so show its output only on failure.
+  out="$(codesign --force --deep --sign - "$COLLECTOR_APP" 2>&1 &&
+    codesign --verify --deep --strict "$COLLECTOR_APP" 2>&1)" ||
+    die "Could not sign .dev/Insider Collector.app:
+$out
+  If Electron.app in node_modules is damaged, reinstall it and run this command again:
+  $fix"
   echo "$version $COLLECTOR_APP_ID" > "$stamp"
   warn "New app bundle: to read the real WhatsApp database, give \"Insider Collector\" Full Disk Access. If an older entry is listed, remove it (−) and add this one."
 }
