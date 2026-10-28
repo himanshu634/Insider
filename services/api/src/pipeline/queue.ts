@@ -1,7 +1,6 @@
 import { Queue } from 'bullmq';
 
-import type { Db } from '../db/client.js';
-import { handlers, type JobData, type JobName } from './tasks.js';
+import { handlers, type JobData, type JobName, type PipelineDeps } from './tasks.js';
 
 export const QUEUE_NAME = 'insider-pipeline';
 
@@ -22,11 +21,11 @@ export function redisConnection(url: string) {
 }
 
 /** Runs jobs in-process, right away. For tests and for dev without Redis. */
-export function inlineQueue(db: Db): JobQueue {
+export function inlineQueue(deps: PipelineDeps): JobQueue {
   return {
     async enqueue(name, data) {
-      const handler = handlers[name] as (db: Db, data: unknown) => Promise<unknown>;
-      await handler(db, data);
+      const handler = handlers[name] as (deps: PipelineDeps, data: unknown) => Promise<unknown>;
+      await handler(deps, data);
     },
     async close() {},
   };

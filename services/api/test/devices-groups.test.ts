@@ -62,8 +62,8 @@ describe('collector config, catalog and heartbeat', () => {
 
   it('watchdog runs with the job data the worker passes', async () => {
     await t.db.update(collectorDevice).set({ lastHeartbeatAt: new Date(Date.now() - 45 * 60_000) });
-    // The worker and the inline queue call every handler as handler(db, job.data); schedulers send {}.
-    const handler = handlers['collector-watchdog'] as (db: typeof t.db, data: unknown) => Promise<number[]>;
-    expect(await handler(t.db, {})).toHaveLength(1);
+    // The worker and the inline queue call every handler as handler(deps, job.data); schedulers send {}.
+    const deps = { db: t.db, anthropic: null, config: t.config };
+    expect(await handlers['collector-watchdog'](deps, {})).toHaveLength(1);
   });
 });

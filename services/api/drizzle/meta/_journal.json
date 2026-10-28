@@ -15,6 +15,13 @@
       "when": 1792406986101,
       "tag": "0001_seed_dictionaries",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793184048262,
+      "tag": "0002_llm_call",
+      "breakpoints": true
     }
   ]
 }

@@ -27,6 +27,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     // Empty counts as unset: /v1/ask returns 501 without a key.
     anthropicApiKey: env.ANTHROPIC_API_KEY || undefined,
     agentModel: env.INSIDER_AGENT_MODEL || 'claude-opus-5-5',
+    /** The model that reads price messages in the pipeline. Defaults to the agent model. */
+    extractionModel: env.INSIDER_EXTRACTION_MODEL || env.INSIDER_AGENT_MODEL || 'claude-opus-5-5',
     askEffort: 'medium' as AskEffort,
     /** Tool calls one /v1/ask answer may make. */
     askMaxToolCalls: 8,
