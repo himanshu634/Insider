@@ -176,7 +176,8 @@ Without Redis installed, `dev` sets `QUEUE_INLINE=true`: jobs run inside the API
 - [ ] Vision extraction for rate-sheet images and PDFs (`ocr-media`)
 - [ ] Relative rows ("10 rupiya upar"), news events and stance
 - [ ] Alias proposals for unknown spellings (for example `arenda` for castor, which the seed lacks, so those rows go to review)
-- [ ] Aggregation into `daily_price` (dirty marks + `aggregate-dirty`)
+- [x] Aggregation into `daily_price`: dirty marks, `aggregate-dirty`, nightly full rebuild, `conflicting` (within one variety) and `single_source` flags, `conflict` insights (`median_modal` still mixes varieties)
+- [ ] Source weights: half weight for `single_source` (AG-03), group reliability (GL-04, GL-05), relative rows as `derived` prices (AG-04)
 - [ ] Golden set of 300 real messages and the precision eval
 
 ## 10a. Phase 4 checklist (insights + agents)

@@ -335,6 +335,27 @@ export const dailyPrice = marketIntel.table(
   (t) => [uniqueIndex('daily_price_cmd_uq').on(t.commodityId, t.marketId, t.date)],
 );
 
+/**
+ * Cells (commodity × market × date) whose trusted observations changed since `daily_price` was last rebuilt.
+ * A re-mark takes a new `version`, so a change made during a rebuild is not lost.
+ */
+export const dailyPriceDirty = marketIntel.table(
+  'daily_price_dirty',
+  {
+    commodityId: ref('commodity_id')
+      .notNull()
+      .references(() => commodity.id),
+    marketId: ref('market_id')
+      .notNull()
+      .references(() => market.id),
+    date: date('date', { mode: 'string' }).notNull(),
+    /** From a sequence: unique and increasing, unlike a timestamp. */
+    version: bigserial('version', { mode: 'number' }).notNull(),
+    markedAt: tsz('marked_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('daily_price_dirty_cell_uq').on(t.commodityId, t.marketId, t.date)],
+);
+
 // ---------------------------------------------------------------- insights
 
 export const insight = marketIntel.table(

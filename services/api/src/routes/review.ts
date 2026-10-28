@@ -7,6 +7,7 @@ import type { Db } from '../db/client.js';
 import { commodity, extractionEvent, market, priceObservation, unit } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { badRequest, body, decodeCursor, limitParam, nextCursor, notFound } from '../http.js';
+import { markDirty } from '../pipeline/aggregate.js';
 import { observationSnapshot } from '../queries/observations.js';
 
 export const review = new Hono<AppEnv>();
@@ -128,6 +129,8 @@ review.patch('/v1/review/observations', body('ObservationReview'), async (c) => 
       .set(changes)
       .where(eq(priceObservation.id, obs.id))
       .returning();
+    // What counts toward daily_price changed in the cell it was in and the cell it is in now.
+    await markDirty(tx, [obs, after!].map((o) => ({ commodityId: o.commodityId, marketId: o.marketId, date: o.obsDate })));
     await tx.insert(extractionEvent).values({
       observationId: obs.id,
       action,

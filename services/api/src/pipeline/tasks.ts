@@ -23,6 +23,7 @@ import { GATE_VERSION, gate } from '../extraction/gate.js';
 import { type ExtractionOutput, packetText, systemPrompt, userPacket } from '../extraction/prompt.js';
 import { centralPerQuintal, type NormalizedRow, normalizeRow, type RowContext } from '../extraction/rows.js';
 import { observationSnapshot } from '../queries/observations.js';
+import { aggregateDirty, aggregateFullRebuild, markDirty } from './aggregate.js';
 import { SCHEDULE_TZ } from './schedule.js';
 
 export const WATCHDOG_SILENCE_MS = 30 * 60 * 1000;
@@ -206,7 +207,7 @@ export async function validate(db: Db, rows: NormalizedRow[]): Promise<Normalize
 
 /**
  * Write the label, each price_observation and its extraction_event, in one transaction. Rows with a reason
- * go to needs_review. (Marking commodity × market × date dirty for aggregation lands with the aggregate job.)
+ * go to needs_review. Cells of auto rows are marked dirty for the aggregate job.
  */
 export async function store(
   db: Db,
@@ -258,6 +259,10 @@ export async function store(
         },
       });
     }
+    await markDirty(
+      tx,
+      rows.filter((r) => !r.reasons.length).map((r) => ({ commodityId: r.commodityId, marketId: r.marketId, date: r.obsDate })),
+    );
     await tx.update(llmCall).set({ notes }).where(eq(llmCall.id, result.llmCallId));
   });
 }
@@ -305,8 +310,6 @@ export async function pendingExtraction(db: Db, limit: number): Promise<number[]
 /** Vision extraction for rate-sheet images and PDFs. */
 export async function ocrMedia(_db: Db, _data: { mediaId: number }) {}
 
-export async function aggregateDirty(_db: Db) {}
-export async function aggregateFullRebuild(_db: Db) {}
 export async function generateInsights(_db: Db) {}
 export async function generateDailyBrief(_db: Db) {}
 export async function proposeDictionaryAliases(_db: Db) {}
