@@ -1,5 +1,5 @@
 {
-  "id": "f783c20a-dc57-4024-a0f1-ab058c351e46",
+  "id": "7b31d778-1414-4cda-b7bd-962a896fe4c4",
   "prevId": "447a2260-1d42-4746-94df-3c24e258fd52",
   "version": "7",
   "dialect": "postgresql",
@@ -872,8 +872,8 @@
         }
       },
       "indexes": {
-        "message_label_message_idx": {
-          "name": "message_label_message_idx",
+        "message_label_message_uq": {
+          "name": "message_label_message_uq",
           "columns": [
             {
               "expression": "message_id",
@@ -882,7 +882,7 @@
               "nulls": "last"
             }
           ],
-          "isUnique": false,
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}

@@ -3,7 +3,7 @@
  * scheduled jobs. Extraction reads text messages; vision, aggregation and insights land later.
  */
 import type Anthropic from '@anthropic-ai/sdk';
-import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, notExists, or, sql } from 'drizzle-orm';
+import { and, asc, eq, exists, gte, inArray, isNotNull, isNull, lt, notExists, or, sql } from 'drizzle-orm';
 
 import type { Config } from '../config.js';
 import type { Db } from '../db/client.js';
@@ -18,7 +18,7 @@ import {
   waMessage,
 } from '../db/schema.js';
 import { type Dictionary, loadDictionary } from '../extraction/dictionary.js';
-import { callExtractor, type ExtractResult } from '../extraction/extract.js';
+import { callExtractor, type ExtractResult, previousExtraction } from '../extraction/extract.js';
 import { GATE_VERSION, gate } from '../extraction/gate.js';
 import { type ExtractionOutput, packetText, systemPrompt, userPacket } from '../extraction/prompt.js';
 import { centralPerQuintal, type NormalizedRow, normalizeRow, type RowContext } from '../extraction/rows.js';
@@ -124,7 +124,8 @@ export async function classify(db: Db, loaded: LoadedMessage, dict: Dictionary):
   if (verdict === 'noise') {
     await db
       .insert(messageLabel)
-      .values({ messageId: loaded.message.id, label: 'noise', confidence: 1, modelVersion: GATE_VERSION });
+      .values({ messageId: loaded.message.id, label: 'noise', confidence: 1, modelVersion: GATE_VERSION })
+      .onConflictDoNothing({ target: messageLabel.messageId });
   }
   return verdict === 'candidate';
 }
@@ -216,10 +217,13 @@ export async function store(
   notes: string[],
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    if (await isLabelled(tx, messageId)) return;
-    await tx
+    // One label per message: a second job for the same message (worker and extract-pending at once) stops here.
+    const [labelled] = await tx
       .insert(messageLabel)
-      .values({ messageId, label: result.output.label, confidence: 1, modelVersion: result.modelVersion });
+      .values({ messageId, label: result.output.label, confidence: 1, modelVersion: result.modelVersion })
+      .onConflictDoNothing({ target: messageLabel.messageId })
+      .returning({ id: messageLabel.id });
+    if (!labelled) return;
     for (const row of rows) {
       const status = row.reasons.length ? 'needs_review' : 'auto';
       const [obs] = await tx
@@ -269,17 +273,20 @@ export async function processMessage(deps: PipelineDeps, { messageId }: { messag
   if (!loaded) return;
   const dict = await loadDictionary(db);
   if (!(await classify(db, loaded, dict))) return;
-  // Without a key the message waits, unlabelled, for `extract-pending`.
-  if (!anthropic) return;
 
-  const result = await extract({ ...deps, anthropic }, loaded, dict);
+  // A retry after a failed save reuses the call it already paid for.
+  let result: ExtractResult | undefined = await previousExtraction(db, messageId);
+  // Without a key the message waits, unlabelled, for `extract-pending`.
+  if (!result && !anthropic) return;
+  result ??= await extract({ ...deps, anthropic: anthropic! }, loaded, dict);
   if (result.outcome !== 'ok') return;
   const { rows, notes } = normalize(loaded, dict, result.output);
   await store(db, messageId, result, await validate(db, rows), notes);
 }
 
 /**
- * Text messages the chain has not finished: first of their cluster, no label and no model call yet. Messages ingested while
+ * Text messages the chain has not finished: first of their cluster, no label, and no model call yet or a
+ * successful one whose save failed. Messages ingested while
  * ANTHROPIC_API_KEY was unset wait here. A message whose call was refused or cut off is not retried.
  */
 export async function pendingExtraction(db: Db, limit: number): Promise<number[]> {
@@ -294,7 +301,16 @@ export async function pendingExtraction(db: Db, limit: number): Promise<number[]
         // A forward stops at dedupe and is never labelled: only the cluster's first message is pending.
         or(isNull(waMessage.clusterId), eq(contentCluster.canonicalMessageId, waMessage.id)),
         notExists(db.select({ one: sql`1` }).from(messageLabel).where(eq(messageLabel.messageId, waMessage.id))),
-        notExists(db.select({ one: sql`1` }).from(llmCall).where(eq(llmCall.messageId, waMessage.id))),
+        // Never called, or called successfully but not saved. A refused or cut-off message is not retried.
+        or(
+          notExists(db.select({ one: sql`1` }).from(llmCall).where(eq(llmCall.messageId, waMessage.id))),
+          exists(
+            db
+              .select({ one: sql`1` })
+              .from(llmCall)
+              .where(and(eq(llmCall.messageId, waMessage.id), eq(llmCall.outcome, 'ok'))),
+          ),
+        ),
       ),
     )
     .orderBy(asc(waMessage.id))

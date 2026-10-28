@@ -126,10 +126,10 @@ describe('per-message extraction chain', () => {
       [5600, 6050, 'જાડી', '2026-10-19', 'needs_review'],
     ]);
     const [label] = await t.db.select().from(messageLabel);
-    expect(label).toMatchObject({ label: 'price', modelVersion: 'claude-opus-5-5:extract-v1' });
+    expect(label).toMatchObject({ label: 'price', modelVersion: 'claude-opus-5-5:extract-v2' });
 
     const [call] = await t.db.select().from(llmCall);
-    expect(call).toMatchObject({ messageId: id, purpose: 'extract', outcome: 'ok', promptVersion: 'extract-v1', notes: [] });
+    expect(call).toMatchObject({ messageId: id, purpose: 'extract', outcome: 'ok', promptVersion: 'extract-v2', notes: [] });
     expect(call!.request).toEqual(requests[0]);
     const events = await t.db.select().from(extractionEvent);
     expect(events).toHaveLength(2);
@@ -140,7 +140,7 @@ describe('per-message extraction chain', () => {
       reasons: ['unit_not_written'],
       llm_call_id: call!.id,
     });
-    expect(events[0]!.actor).toBe('model:claude-opus-5-5:extract-v1');
+    expect(events[0]!.actor).toBe('model:claude-opus-5-5:extract-v2');
   });
 
   it('sends the model no sender, phone number or price reference (SF-03, CX-08)', async () => {
@@ -254,6 +254,45 @@ describe('per-message extraction chain', () => {
     expect(requests).toHaveLength(1);
     expect(await observations()).toHaveLength(1);
     expect(await pendingExtraction(t.db, 10)).toEqual([]);
+  });
+
+  it('reuses the paid call when the save failed, and extract-pending finds the message', async () => {
+    const body = 'એરંડા 1250-1290 ગોંડલ';
+    const id = await add(groups.g1, 'G1-0020', body);
+    const { client, requests } = scriptedAnthropic([
+      answer({
+        label: 'price',
+        rows: [row({ commodity: 'castor', commodity_term: 'એરંડા', market: 'gondal', market_term: 'ગોંડલ', min_price: 1250, max_price: 1290, evidence: body })],
+      }),
+    ]);
+    // The save fails once, after the model call.
+    await t.client.exec(`
+      create function market_intel.fail_once() returns trigger language plpgsql as $$ begin raise exception 'save failed'; end $$;
+      create trigger fail_once before insert on market_intel.price_observation for each row execute function market_intel.fail_once();
+    `);
+    await expect(run(id, client)).rejects.toThrow(/insert into "market_intel"."price_observation"/);
+    expect(await t.db.select().from(messageLabel)).toHaveLength(0);
+    expect(await pendingExtraction(t.db, 10)).toEqual([id]);
+
+    await t.client.exec('drop trigger fail_once on market_intel.price_observation');
+    // No second scripted turn: a second model call would throw.
+    await run(id, null);
+    expect(requests).toHaveLength(1);
+    expect(await observations()).toHaveLength(1);
+    expect(await pendingExtraction(t.db, 10)).toEqual([]);
+  });
+
+  it('stores one label and one set of rows when two jobs run the same message at once', async () => {
+    const body = 'singdana bold 1100-1180 per 20kg Rajkot';
+    const id = await add(groups.g3, 'G3-0020', body);
+    const out = answer({
+      label: 'price',
+      rows: [row({ commodity: 'groundnut', commodity_term: 'singdana', variety: 'bold', market: 'rajkot', market_term: 'Rajkot', min_price: 1100, max_price: 1180, unit_term: 'per 20kg', evidence: body })],
+    });
+    const { client } = scriptedAnthropic([out, out]);
+    await Promise.all([run(id, client), run(id, client)]);
+    expect(await t.db.select().from(messageLabel)).toHaveLength(1);
+    expect(await observations()).toHaveLength(1);
   });
 
   it('counts a forward once when its job runs again (FX-10)', async () => {

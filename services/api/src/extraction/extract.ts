@@ -6,6 +6,7 @@
 import { createHash } from 'node:crypto';
 
 import type Anthropic from '@anthropic-ai/sdk';
+import { and, desc, eq } from 'drizzle-orm';
 
 import type { Config } from '../config.js';
 import type { Db } from '../db/client.js';
@@ -25,16 +26,45 @@ interface Deps {
   config: Config;
 }
 
-function read(response: Anthropic.Message): { outcome: ExtractResult['outcome']; output?: ExtractionOutput } {
-  if (response.stop_reason === 'refusal') return { outcome: 'refusal' };
-  if (response.stop_reason === 'max_tokens') return { outcome: 'max_tokens' };
-  const text = response.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
+function read(
+  stopReason: string | null,
+  content: readonly Anthropic.ContentBlock[],
+): { outcome: ExtractResult['outcome']; output?: ExtractionOutput } {
+  if (stopReason === 'refusal') return { outcome: 'refusal' };
+  if (stopReason === 'max_tokens') return { outcome: 'max_tokens' };
+  const text = content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('');
   try {
     const parsed = ExtractionOutput.safeParse(JSON.parse(text));
     return parsed.success ? { outcome: 'ok', output: parsed.data } : { outcome: 'invalid_output' };
   } catch {
     return { outcome: 'invalid_output' };
   }
+}
+
+/**
+ * The output of this message's latest successful call with the current prompt. A job retried after its save
+ * failed uses it instead of paying for the same call again.
+ */
+export async function previousExtraction(
+  db: Db,
+  messageId: number,
+): Promise<Extract<ExtractResult, { outcome: 'ok' }> | undefined> {
+  const [call] = await db
+    .select()
+    .from(llmCall)
+    .where(
+      and(
+        eq(llmCall.messageId, messageId),
+        eq(llmCall.purpose, 'extract'),
+        eq(llmCall.outcome, 'ok'),
+        eq(llmCall.promptVersion, PROMPT_VERSION),
+      ),
+    )
+    .orderBy(desc(llmCall.id))
+    .limit(1);
+  if (!call) return undefined;
+  const { output } = read(call.stopReason, (call.response?.content ?? []) as Anthropic.ContentBlock[]);
+  return output && { outcome: 'ok', output, llmCallId: call.id, modelVersion: `${call.model}:${PROMPT_VERSION}` };
 }
 
 export async function callExtractor(
@@ -53,7 +83,7 @@ export async function callExtractor(
       output_config: { format: OUTPUT_FORMAT },
     } satisfies Anthropic.MessageCreateParamsNonStreaming;
     const response = await client.messages.create(request);
-    const { outcome, output } = read(response);
+    const { outcome, output } = read(response.stop_reason, response.content);
 
     const [logged] = await db
       .insert(llmCall)

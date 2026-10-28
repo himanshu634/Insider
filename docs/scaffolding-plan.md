@@ -178,6 +178,9 @@ Without Redis installed, `dev` sets `QUEUE_INLINE=true`: jobs run inside the API
 - [ ] Alias proposals for unknown spellings (for example `arenda` for castor, which the seed lacks, so those rows go to review)
 - [ ] Aggregation into `daily_price` (dirty marks + `aggregate-dirty`)
 - [ ] Golden set of 300 real messages and the precision eval
+- [ ] Magnitude check before history exists: a row with a written unit gets no size check until 3 trusted prices exist for its commodity and mandi (fixed range per commodity, or review until history exists)
+- [ ] Unknown unit spellings (`kwintal`, `Q`, `candy`, `ton`) drop the row; send them to review instead
+- [ ] Match commodity and mandi terms in `rows.ts` as whole words, as `mentions()` does, not as substrings
 
 ## 10a. Phase 4 checklist (insights + agents)
 

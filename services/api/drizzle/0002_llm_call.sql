@@ -16,5 +16,7 @@ CREATE TABLE "market_intel"."llm_call" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+DROP INDEX "market_intel"."message_label_message_idx";--> statement-breakpoint
 ALTER TABLE "market_intel"."llm_call" ADD CONSTRAINT "llm_call_message_id_wa_message_id_fk" FOREIGN KEY ("message_id") REFERENCES "market_intel"."wa_message"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "llm_call_message_idx" ON "market_intel"."llm_call" USING btree ("message_id");
+CREATE INDEX "llm_call_message_idx" ON "market_intel"."llm_call" USING btree ("message_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "message_label_message_uq" ON "market_intel"."message_label" USING btree ("message_id");

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { type Dictionary, loadDictionary } from '../src/extraction/dictionary.js';
 import { gate } from '../src/extraction/gate.js';
-import { type ExtractedRow, packetText } from '../src/extraction/prompt.js';
+import { type ExtractedRow, packetText, userPacket } from '../src/extraction/prompt.js';
 import { normalizeRow, type RowContext } from '../src/extraction/rows.js';
 import { setup } from './helpers.js';
 
@@ -187,6 +187,32 @@ describe('normalizeRow', () => {
     expect(note(row({ kind: 'relative', change: 10, evidence: 'Kale karta 10 rupiya upar' }), ctx('Kale karta 10 rupiya upar'))).toBe('relative_row');
     const text = 'singdana java 1180-1260 per 20 kg';
     expect(note(row({ commodity: 'groundnut', commodity_term: 'singdana', min_price: 1180, max_price: 1260, unit_term: 'per 20 kg', evidence: text }), ctx(text))).toBe('no_market');
+  });
+
+  it('keeps two 3-digit prices apart, for the model and for the checks', () => {
+    const text = 'એરંડા 480,520 ગોંડલ';
+    expect(userPacket({ groupName: 'G', groupCommodities: [], sentAtIst: '2026-10-19 09:00', text })).toContain('480,520');
+    const r = ok(
+      row({ commodity: 'castor', commodity_term: 'એરંડા', market: 'gondal', market_term: 'ગોંડલ', min_price: 480, max_price: 520, unit_term: null, evidence: text }),
+      ctx(text),
+    );
+    expect([r.minPerQuintal, r.maxPerQuintal]).toEqual([2400, 2600]);
+    // A grouping comma still reads as one number.
+    const grouped = 'Groundnut ₹5,900/qtl Junagadh';
+    expect(
+      ok(row({ commodity: 'groundnut', commodity_term: 'Groundnut', market: 'junagadh', market_term: 'Junagadh', modal_price: 5900, unit_term: '/qtl', evidence: grouped }), ctx(grouped))
+        .modalPerQuintal,
+    ).toBe(5900);
+  });
+
+  it('ignores an impossible date and cuts a long variety to the column width', () => {
+    const text = 'એરંડા 1250-1290 ગોંડલ';
+    const r = ok(
+      row({ commodity: 'castor', commodity_term: 'એરંડા', market: 'gondal', market_term: 'ગોંડલ', min_price: 1250, max_price: 1290, obs_date: '2026-02-30', variety: 'x'.repeat(100), evidence: text }),
+      ctx(text),
+    );
+    expect(r.obsDate).toBe('2026-10-19');
+    expect(r.variety).toHaveLength(64);
   });
 
   it('keeps a stated earlier date (EX-08) and sends a future one to review', () => {
