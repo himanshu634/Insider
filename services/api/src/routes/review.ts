@@ -120,7 +120,18 @@ review.patch('/v1/review/observations', body('ObservationReview'), async (c) => 
         if (!u) throw badRequest(`Unknown unit ${e.unit}`);
         changes.unitId = u.id;
       }
-      // Per-quintal values are recomputed by the normalize step once edits land (Phase 3).
+      // Per-quintal values follow the edited raw values and unit.
+      const [u] = await tx
+        .select({ factor: unit.factorToQuintal })
+        .from(unit)
+        .where(eq(unit.id, changes.unitId ?? obs.unitId));
+      const perQuintal = (raw: number | null | undefined, current: number | null) => {
+        const value = raw === undefined ? current : raw;
+        return value === null ? null : value * u!.factor;
+      };
+      changes.minPerQuintal = perQuintal(changes.minRaw, obs.minRaw);
+      changes.maxPerQuintal = perQuintal(changes.maxRaw, obs.maxRaw);
+      changes.modalPerQuintal = perQuintal(changes.modalRaw, obs.modalRaw);
     }
     const [after] = await tx
       .update(priceObservation)

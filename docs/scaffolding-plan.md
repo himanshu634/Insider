@@ -37,7 +37,7 @@ insider/
       drizzle/                SQL migrations (initial schema, seed dictionaries)
       src/routes/             collector, read, review, admin
       src/pipeline/           tasks, queue (BullMQ or inline), IST schedules
-      src/extraction/         per-commodity extraction schemas (CropSchemaRegistry pattern)
+      src/extraction/         rule gate, extraction prompt and schema, row checks
       src/server.ts, src/worker.ts
       test/                   PGlite (in-process Postgres) tests running the real migrations
   packages/
@@ -168,12 +168,23 @@ Without Redis installed, `dev` sets `QUEUE_INLINE=true`: jobs run inside the API
 - [x] `bin/insider` with `dev` and one subcommand per service
 - [x] CI: one workflow, path-filtered jobs for contracts, API (with real Postgres), web, collector (macOS runner), tools
 
+## 10b. Phase 3 checklist (extraction)
+
+- [x] Per-message chain for text messages: rule gate → one structured-output call → row checks in code (evidence, numbers, dictionaries, units, dates, min > max, 30-day median bounds) → `price_observation` + `extraction_event`; every call logged in `llm_call` (not live-verified)
+- [x] `extract-pending` CLI for messages ingested without `ANTHROPIC_API_KEY`
+- [ ] Escalation pass 2 (thread, sender and fuzzy-match context) for rows with no mandi or an ambiguous commodity
+- [ ] Vision extraction for rate-sheet images and PDFs (`ocr-media`)
+- [ ] Relative rows ("10 rupiya upar"), news events and stance
+- [ ] Alias proposals for unknown spellings (for example `arenda` for castor, which the seed lacks, so those rows go to review)
+- [ ] Aggregation into `daily_price` (dirty marks + `aggregate-dirty`)
+- [ ] Golden set of 300 real messages and the precision eval
+
 ## 10a. Phase 4 checklist (insights + agents)
 
 - [x] /v1/ask scaffold (Tool Runner, read-only tools, 8-call cap, number check) (not live-verified)
 - [x] Internal analyst CLI in tools/analyst (Claude Agent SDK 0.3.303, read-only insider tools, no built-in tools or user settings) (not live-verified)
 - [x] Scrub phone numbers and @mentions from message text before it reaches any LLM (SF-03 follow-up): `scrubContacts` in `services/api/src/agent/scrub.ts`, applied by `search_messages` to what the model sees and to the number-check evidence
-- [ ] Extraction pipeline: pass message text through `scrubContacts` before the extraction LLM sees it (no extraction LLM call exists yet)
+- [x] Extraction pipeline: pass message text through `scrubContacts` before the extraction LLM sees it (`packetText` in `services/api/src/extraction/prompt.ts`)
 
 ## 11. Decisions
 
