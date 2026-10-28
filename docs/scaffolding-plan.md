@@ -179,6 +179,9 @@ Without Redis installed, `dev` sets `QUEUE_INLINE=true`: jobs run inside the API
 - [x] Aggregation into `daily_price`: dirty marks, `aggregate-dirty`, nightly full rebuild, `conflicting` (within one variety) and `single_source` flags, `conflict` insights (`median_modal` still mixes varieties)
 - [ ] Source weights: half weight for `single_source` (AG-03), group reliability (GL-04, GL-05), relative rows as `derived` prices (AG-04)
 - [ ] Golden set of 300 real messages and the precision eval
+- [ ] Magnitude check before history exists: a row with a written unit gets no size check until 3 trusted prices exist for its commodity and mandi (fixed range per commodity, or review until history exists)
+- [ ] Unknown unit spellings (`kwintal`, `Q`, `candy`, `ton`) drop the row; send them to review instead
+- [ ] Match commodity and mandi terms in `rows.ts` as whole words, as `mentions()` does, not as substrings
 
 ## 10a. Phase 4 checklist (insights + agents)
 

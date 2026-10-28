@@ -18,12 +18,16 @@ const DEVANAGARI_DIGIT = /[०-९]/g;
 // whitespace after the commas of a list.
 const GROUPING_COMMA = /(?<=\d),(?=(?:\d{2},)*\d{3}(?!\d))/g;
 
-/** Map Gujarati and Devanagari digits to ASCII and drop digit-grouping commas ("૬,૨૫૦" becomes "6250"). */
-export function normalizeDigits(text: string): string {
+/** Map Gujarati and Devanagari digits to ASCII, and nothing else ("૪૮૦,૫૨૦" becomes "480,520"). */
+export function mapDigits(text: string): string {
   return text
     .replace(GUJARATI_DIGIT, (digit) => String(digit.charCodeAt(0) - 0x0ae6))
-    .replace(DEVANAGARI_DIGIT, (digit) => String(digit.charCodeAt(0) - 0x0966))
-    .replace(GROUPING_COMMA, '');
+    .replace(DEVANAGARI_DIGIT, (digit) => String(digit.charCodeAt(0) - 0x0966));
+}
+
+/** Map Gujarati and Devanagari digits to ASCII and drop digit-grouping commas ("૬,૨૫૦" becomes "6250"). */
+export function normalizeDigits(text: string): string {
+  return mapDigits(text).replace(GROUPING_COMMA, '');
 }
 
 export function contentHash(text: string | null | undefined): string | null {

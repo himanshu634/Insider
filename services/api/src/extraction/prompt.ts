@@ -7,11 +7,10 @@ import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { z } from 'zod';
 
 import { scrubContacts } from '../agent/scrub.js';
-import { normalizeDigits } from '../pipeline/normalize-text.js';
 import type { Dictionary } from './dictionary.js';
 
 /** Bump when the instructions or the schema change, so stored calls say which prompt they used. */
-export const PROMPT_VERSION = 'extract-v1';
+export const PROMPT_VERSION = 'extract-v2';
 
 export const ExtractedRow = z.object({
   kind: z.enum(['price', 'relative']).describe('relative: the message gives a change ("10 rupiya upar"), not a price'),
@@ -88,10 +87,11 @@ export interface PacketInput {
 }
 
 /**
- * The message as the model sees it, and as the checks read it: contacts masked (SF-03) and digits in ASCII.
- * No sender, JID or computed price is in the packet (CX-08).
+ * The message as the model sees it, and as the checks read it: contacts masked (SF-03), digits as written.
+ * Digits are not normalized here: dropping grouping commas would turn a list of two 3-digit prices
+ * ("480,520") into one number. No sender, JID or computed price is in the packet (CX-08).
  */
-export const packetText = (text: string) => normalizeDigits(scrubContacts(text));
+export const packetText = (text: string) => scrubContacts(text);
 
 export function userPacket(p: PacketInput): string {
   const lines = [

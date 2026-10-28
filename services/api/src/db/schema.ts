@@ -177,7 +177,7 @@ export const waMedia = marketIntel.table(
   (t) => [index('wa_media_message_idx').on(t.messageId), index('wa_media_sha256_idx').on(t.sha256)],
 );
 
-/** Classifier output. */
+/** Classifier output: one label per message. */
 export const messageLabel = marketIntel.table(
   'message_label',
   {
@@ -190,7 +190,7 @@ export const messageLabel = marketIntel.table(
     modelVersion: varchar('model_version', { length: 64 }).notNull(),
     createdAt: createdAt(),
   },
-  (t) => [index('message_label_message_idx').on(t.messageId)],
+  (t) => [uniqueIndex('message_label_message_uq').on(t.messageId)],
 );
 
 // ---------------------------------------------------------------- dictionaries

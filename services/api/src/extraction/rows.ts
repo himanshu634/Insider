@@ -5,6 +5,7 @@
  * commodity, market and unit are resolved against the dictionaries here.
  */
 import { extractNumbers } from '../agent/number-check.js';
+import { mapDigits } from '../pipeline/normalize-text.js';
 import { type Dictionary, matchTerm, matchUnit, mentions, termKey, type UnitTerm } from './dictionary.js';
 import type { ExtractedRow } from './prompt.js';
 
@@ -62,7 +63,11 @@ export type RowResult = { ok: true; row: NormalizedRow } | { ok: false; note: st
 const drop = (note: string): RowResult => ({ ok: false, note });
 const squash = (s: string) => s.replace(/\s+/g, ' ').trim();
 const contains = (text: string | null, part: string) => !!text && termKey(text).includes(termKey(part));
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** The price_observation.variety column width. */
+const VARIETY_MAX = 64;
+
+/** A real calendar date: "2026-02-30" parses in JavaScript (as 2 March) but Postgres rejects it. */
+const isDate = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
 
 const addDays = (date: string, days: number) =>
   new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
@@ -72,9 +77,11 @@ const perQuintal = (raw: number | null, u: UnitTerm) => (raw === null ? null : r
 export function normalizeRow(r: ExtractedRow, ctx: RowContext): RowResult {
   if (r.kind === 'relative') return drop('relative_row');
 
-  // Evidence: the exact text of the message, compared with whitespace squashed.
-  if (!r.evidence.trim() || !squash(ctx.text).includes(squash(r.evidence))) return drop('evidence_not_in_message');
-  const numbers = new Set(extractNumbers(r.evidence));
+  // Evidence: the exact text of the message, compared with whitespace squashed and digits in ASCII.
+  const evidence = mapDigits(r.evidence);
+  if (!evidence.trim() || !squash(mapDigits(ctx.text)).includes(squash(evidence))) return drop('evidence_not_in_message');
+  // Read "480,520" both ways: as two prices, and as one number with a grouping comma ("6,250").
+  const numbers = new Set([...extractNumbers(evidence), ...(evidence.match(/\d+(?:\.\d+)?/g) ?? []).map(Number)]);
   for (const n of [r.min_price, r.max_price, r.modal_price, r.arrivals]) {
     if (n !== null && !numbers.has(n)) return drop(`number_not_in_evidence ${n}`);
   }
@@ -131,7 +138,7 @@ export function normalizeRow(r: ExtractedRow, ctx: RowContext): RowResult {
   if (!written) lower(INFERRED);
 
   let obsDate = ctx.messageDate;
-  if (r.obs_date && DATE.test(r.obs_date) && !Number.isNaN(Date.parse(r.obs_date))) {
+  if (r.obs_date && isDate(r.obs_date)) {
     obsDate = r.obs_date;
     if (obsDate > addDays(ctx.messageDate, MAX_FUTURE_DAYS)) reasons.push('future_date');
     if (obsDate < addDays(ctx.messageDate, -MAX_PAST_DAYS)) reasons.push('stale_date');
@@ -155,7 +162,8 @@ export function normalizeRow(r: ExtractedRow, ctx: RowContext): RowResult {
       market: market.slug,
       unit: unit.slug,
       unitWritten: !!written,
-      variety: r.variety?.trim() || null,
+      // As written, cut to the column width so a long one cannot fail the save.
+      variety: r.variety?.trim().slice(0, VARIETY_MAX) || null,
       obsDate,
       minRaw: r.min_price,
       maxRaw: r.max_price,
