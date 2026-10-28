@@ -11,6 +11,7 @@
 		EmptyState,
 		IconButton,
 		Input,
+		Logo,
 		PriceCell,
 		SegmentedControl,
 		Select,
@@ -134,6 +135,22 @@
 	title="Mandi Ledger"
 	subtitle="The Insider design system: tokens and components, in light and dark. Every route uses only what is on this page."
 />
+
+<section class="mb-8">
+	<h2 class="mb-3 text-lg font-semibold">Logo</h2>
+	<p class="mb-3 text-sm text-ink-muted">
+		Chatter to one line: rows of chatter settle into one clean line with a point at its end. The
+		plain mark follows the theme; the tile keeps one look in both themes, like the app icon.
+	</p>
+	<Card>
+		<div class="flex flex-wrap items-center gap-8">
+			<Logo size={64} />
+			<Logo tile size={64} />
+			<span class="flex items-center gap-2 text-lg font-bold text-primary"><Logo />Insider</span>
+			<Logo size={16} />
+		</div>
+	</Card>
+</section>
 
 <section class="mb-8">
 	<h2 class="mb-3 text-lg font-semibold">Type</h2>

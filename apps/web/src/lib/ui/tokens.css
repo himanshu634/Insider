@@ -126,6 +126,12 @@
 }
 
 :root {
+	/* Brand tile (Logo tile, rail, app icon): one look in both themes, like an app icon. */
+	--brand-tile: #1f5c3f;
+	--brand-on-tile: #f7f4ec;
+	--brand-chatter-on-tile: #8fb09c;
+	--brand-point: #d99a1e;
+
 	/* Motion: short, ease-out, and cancelled under prefers-reduced-motion (below). */
 	--duration-fast: 120ms;
 	--duration-base: 160ms;

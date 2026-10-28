@@ -6,7 +6,7 @@
 	import favicon from '#lib/assets/favicon.svg';
 	import { createAppQueryClient } from '#lib/api/query-client.js';
 	import { I18n, setI18n } from '#lib/i18n.svelte.js';
-	import { Icon, IconButton, Toaster, theme } from '#lib/ui/index.js';
+	import { Icon, IconButton, Logo, Toaster, theme } from '#lib/ui/index.js';
 	import AppNav from '#lib/components/AppNav.svelte';
 	import CollectorBadge from '#lib/components/CollectorBadge.svelte';
 	import LocaleToggle from '#lib/components/LocaleToggle.svelte';
@@ -25,7 +25,7 @@
 </script>
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
+	<link rel="icon" href={favicon} type="image/svg+xml" />
 	<title>{i18n.t('brand')}</title>
 	<meta
 		name="color-scheme"
@@ -56,14 +56,13 @@
 			]}
 		>
 			{#if sidebar.collapsed}
-				<a
-					href={resolve('/')}
-					aria-label={i18n.t('brand')}
-					class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-lg font-bold text-primary-ink"
-					>I</a
+				<a href={resolve('/')} aria-label={i18n.t('brand')} class="flex rounded-lg"
+					><Logo tile size={40} /></a
 				>
 			{:else}
-				<a href={resolve('/')} class="px-3 text-lg font-bold text-primary">{i18n.t('brand')}</a>
+				<a href={resolve('/')} class="flex items-center gap-2 px-3 text-lg font-bold text-primary"
+					><Logo />{i18n.t('brand')}</a
+				>
 			{/if}
 			<AppNav variant="side" collapsed={sidebar.collapsed} />
 			<div class="mt-auto">
@@ -101,8 +100,10 @@
 					fullBleed ? 'md:hidden' : 'md:flex'
 				]}
 			>
-				<a href={resolve('/')} class="text-lg font-bold text-primary md:invisible"
-					>{i18n.t('brand')}</a
+				<a
+					href={resolve('/')}
+					class="flex items-center gap-2 text-lg font-bold text-primary md:invisible"
+					><Logo />{i18n.t('brand')}</a
 				>
 				<div class="flex items-center gap-1">
 					<CollectorBadge />

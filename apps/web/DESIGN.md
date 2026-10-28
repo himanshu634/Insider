@@ -55,7 +55,8 @@ theme for its subtree.
 
 Each status role has a `*-soft` background (`bg-positive-soft`, ...) for badges and
 banners; text in the matching role on its soft background stays ≥4.9:1 in both themes.
-Chart series use `--chart-1` … `--chart-6` and `--chart-grid`.
+Chart series use `--chart-1` … `--chart-6` and `--chart-grid`. The `--brand-*` tokens
+(tile, on-tile, chatter-on-tile, point) colour the logo tile and do not change with the theme.
 
 ### Type
 
@@ -94,6 +95,7 @@ Chart series use `--chart-1` … `--chart-6` and `--chart-grid`.
 | `PriceCell`          | ₹/quintal value, tabular and right-aligned; raw reported value and unit on hover (and for screen readers); optional delta |
 | `Delta`              | Signed ₹ change with ▲/▼ glyph and colour, plus a spoken label                                                            |
 | `DataTable`          | Sticky header, numeric columns right-aligned, loading skeleton rows, empty row, selected row, columns hidden on phones    |
+| `Logo`               | The Insider mark (`size`); `tile` puts it on the fixed brand tile (`--brand-*` tokens, same in both themes)               |
 | `Input`              | Labelled text input with hint, error (`aria-invalid`, `aria-describedby`) and leading icon                                |
 | `Select`             | Labelled native select                                                                                                    |
 | `Switch`             | `role="switch"` toggle with busy state                                                                                    |
@@ -121,6 +123,16 @@ badge, page header, loading/error states, insight card, price trend chart).
   `PriceDetails`: a drawer when there is room, a sheet otherwise). Below 1024px it is one pane:
   the list, then the open chat full screen with the bottom bar hidden. Where WhatsApp has the
   message box, a bar says Insider only reads.
+
+## Logo
+
+The mark is **chatter to one line**: two rows of wavy chatter (`--border-strong`) settle into one
+straight line (`--primary`) with a point at its end (`--accent`). It is one 64-unit drawing in
+three places that change together: `src/lib/ui/Logo.svelte`, `src/lib/assets/favicon.svg`, and
+the collector's `apps/collector/src/core/mark.ts`, which draws the menu-bar template icon (chatter
+at half alpha) and renders `apps/collector/resources/icon.png` and `static/apple-touch-icon.png`
+(`pnpm --filter @insider/collector icons`). The wordmark is the word Insider in Inter 700 next to
+the mark, in both locales.
 
 ## Usage rules
 

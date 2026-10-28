@@ -1,4 +1,5 @@
 import { deflateSync } from 'node:zlib';
+import { markPartAt, rasterize, type Rgba } from './mark.js';
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -47,28 +48,46 @@ export function encodePng(width: number, height: number, rgba: Uint8Array): Buff
 }
 
 /**
- * Menu-bar template icon: black ring with a centre dot on transparent, anti-aliased by 4×4
- * supersampling. Only alpha matters for a template image (macOS tints it for light/dark).
- * Default 32 px = 16 pt at @2x.
+ * Menu-bar template icon: the Insider mark on transparent. Only alpha matters for a template
+ * image (macOS tints it for light and dark bars), so the chatter is drawn at about half alpha
+ * to keep the settled line and point reading first. Default 32 px = 16 pt at @2x.
  */
 export function trayIconPng(size = 32): Buffer {
-  const rgba = new Uint8Array(size * size * 4);
-  const c = size / 2;
-  const outer = size * 0.44;
-  const inner = size * 0.3;
-  const dot = size * 0.14;
-  const ss = 4;
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      let hits = 0;
-      for (let sy = 0; sy < ss; sy++) {
-        for (let sx = 0; sx < ss; sx++) {
-          const d = Math.hypot(x + (sx + 0.5) / ss - c, y + (sy + 0.5) / ss - c);
-          if ((d <= outer && d >= inner) || d <= dot) hits++;
-        }
-      }
-      rgba[(y * size + x) * 4 + 3] = Math.round((255 * hits) / (ss * ss));
-    }
-  }
+  const rgba = rasterize(size, 4, (x, y) => {
+    const part = markPartAt(x * 64, y * 64);
+    if (!part) return null;
+    return part === 'chatter' ? [0, 0, 0, 140] : [0, 0, 0, 255];
+  });
+  return encodePng(size, size, rgba);
+}
+
+const TILE: Rgba = [0x1f, 0x5c, 0x3f, 255];
+const COLOURS = {
+  chatter: [0x8f, 0xb0, 0x9c, 255],
+  line: [0xf7, 0xf4, 0xec, 255],
+  point: [0xd9, 0x9a, 0x1e, 255],
+} satisfies Record<string, Rgba>;
+
+function inRoundedSquare(x: number, y: number, inset: number, radius: number): boolean {
+  const lo = inset + radius;
+  const hi = 1 - inset - radius;
+  const dx = Math.max(lo - x, 0, x - hi);
+  const dy = Math.max(lo - y, 0, y - hi);
+  return x >= inset && x <= 1 - inset && y >= inset && y <= 1 - inset && Math.hypot(dx, dy) <= radius;
+}
+
+/**
+ * App icon: the mark on the field-green brand tile (same colours as the web Logo tile).
+ * `inset` and `radius` are fractions of the image; the defaults follow the macOS icon grid
+ * (an 824 px tile in a 1024 px canvas). Pass 0, 0 for a full-bleed square that iOS masks itself.
+ */
+export function appIconPng(size = 1024, inset = 100 / 1024, radius = 185 / 1024): Buffer {
+  const markScale = 0.65 * (1 - 2 * inset);
+  const markOrigin = (1 - markScale) / 2;
+  const rgba = rasterize(size, size > 256 ? 2 : 4, (x, y) => {
+    if (!inRoundedSquare(x, y, inset, radius)) return null;
+    const part = markPartAt(((x - markOrigin) / markScale) * 64, ((y - markOrigin) / markScale) * 64);
+    return part ? COLOURS[part] : TILE;
+  });
   return encodePng(size, size, rgba);
 }
