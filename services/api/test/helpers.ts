@@ -19,7 +19,8 @@ export async function setup(opts: { anthropic?: Anthropic | null } = {}) {
   const db = drizzle(client, { schema }) as unknown as Db;
   await migrate(drizzle(client), MIGRATIONS_OPTIONS);
   const config = loadConfig();
-  const app = createApp({ db, queue: inlineQueue(db), config, anthropic: opts.anthropic ?? null });
+  const anthropic = opts.anthropic ?? null;
+  const app = createApp({ db, queue: inlineQueue({ db, anthropic, config }), config, anthropic });
   await db.insert(schema.collectorDevice).values({ name: 'test-mac', tokenHash: hashToken(DEVICE_TOKEN) });
 
   const request = (path: string, init: RequestInit & { json?: unknown; device?: boolean } = {}) => {
@@ -34,5 +35,5 @@ export async function setup(opts: { anthropic?: Anthropic | null } = {}) {
     // Tests read loosely-typed JSON; response shapes are checked against the spec in contract.test.ts.
     return res as Promise<Omit<Response, 'json'> & { json(): Promise<any> }>;
   };
-  return { db, client, app, request, close: () => client.close() };
+  return { db, client, config, app, request, close: () => client.close() };
 }

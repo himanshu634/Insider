@@ -7,6 +7,8 @@ import type { Db } from '../db/client.js';
 import { commodity, extractionEvent, market, priceObservation, unit } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { badRequest, body, decodeCursor, limitParam, nextCursor, notFound } from '../http.js';
+import { markDirty } from '../pipeline/aggregate.js';
+import { observationSnapshot } from '../queries/observations.js';
 
 export const review = new Hono<AppEnv>();
 
@@ -44,17 +46,6 @@ export const toObservation = ({ obs, ...names }: ObservationRow): Schemas['Price
   status: obs.status,
 });
 
-const snapshot = (o: typeof priceObservation.$inferSelect) => ({
-  commodity_id: o.commodityId,
-  market_id: o.marketId,
-  unit_id: o.unitId,
-  variety: o.variety,
-  obs_date: o.obsDate,
-  min_raw: o.minRaw,
-  max_raw: o.maxRaw,
-  modal_raw: o.modalRaw,
-  arrivals_quintal: o.arrivalsQuintal,
-});
 
 review.get('/v1/review/observations', async (c) => {
   const q = c.req.query();
@@ -91,7 +82,7 @@ review.patch('/v1/review/observations', body('ObservationReview'), async (c) => 
   const updated = await db.transaction(async (tx) => {
     const [obs] = await tx.select().from(priceObservation).where(eq(priceObservation.id, req.id));
     if (!obs) throw notFound('Unknown observation');
-    const before = snapshot(obs);
+    const before = observationSnapshot(obs);
 
     let action: 'approved' | 'rejected' | 'edited';
     let changes: Partial<typeof priceObservation.$inferInsert> = {};
@@ -120,19 +111,32 @@ review.patch('/v1/review/observations', body('ObservationReview'), async (c) => 
         if (!u) throw badRequest(`Unknown unit ${e.unit}`);
         changes.unitId = u.id;
       }
-      // Per-quintal values are recomputed by the normalize step once edits land (Phase 3).
+      // Per-quintal values follow the edited raw values and unit.
+      const [u] = await tx
+        .select({ factor: unit.factorToQuintal })
+        .from(unit)
+        .where(eq(unit.id, changes.unitId ?? obs.unitId));
+      const perQuintal = (raw: number | null | undefined, current: number | null) => {
+        const value = raw === undefined ? current : raw;
+        return value === null ? null : value * u!.factor;
+      };
+      changes.minPerQuintal = perQuintal(changes.minRaw, obs.minRaw);
+      changes.maxPerQuintal = perQuintal(changes.maxRaw, obs.maxRaw);
+      changes.modalPerQuintal = perQuintal(changes.modalRaw, obs.modalRaw);
     }
     const [after] = await tx
       .update(priceObservation)
       .set(changes)
       .where(eq(priceObservation.id, obs.id))
       .returning();
+    // What counts toward daily_price changed in the cell it was in and the cell it is in now.
+    await markDirty(tx, [obs, after!].map((o) => ({ commodityId: o.commodityId, marketId: o.marketId, date: o.obsDate })));
     await tx.insert(extractionEvent).values({
       observationId: obs.id,
       action,
       actor: `user:${user.id}`,
       before,
-      after: snapshot(after!),
+      after: observationSnapshot(after!),
     });
     return after!;
   });

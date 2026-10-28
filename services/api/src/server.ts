@@ -8,8 +8,8 @@ import { bullQueue, inlineQueue } from './pipeline/queue.js';
 
 const config = loadConfig();
 const { db, close } = createDb(config.databaseUrl);
-const queue = config.queueInline ? inlineQueue(db) : bullQueue(config.redisUrl);
 const anthropic = createAnthropic(config);
+const queue = config.queueInline ? inlineQueue({ db, anthropic, config }) : bullQueue(config.redisUrl);
 
 const server = serve(
   { fetch: createApp({ db, queue, config, anthropic }).fetch, port: config.port, hostname: config.host }, (info) =>

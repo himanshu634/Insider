@@ -84,6 +84,12 @@ export const insightType = marketIntel.enum('insight_type', [
   'news',
 ]);
 export const severity = marketIntel.enum('severity', ['info', 'notable', 'high']);
+export const llmCallOutcome = marketIntel.enum('llm_call_outcome', [
+  'ok',
+  'refusal',
+  'max_tokens',
+  'invalid_output',
+]);
 
 // ---------------------------------------------------------------- collection
 
@@ -171,7 +177,7 @@ export const waMedia = marketIntel.table(
   (t) => [index('wa_media_message_idx').on(t.messageId), index('wa_media_sha256_idx').on(t.sha256)],
 );
 
-/** Classifier output. */
+/** Classifier output: one label per message. */
 export const messageLabel = marketIntel.table(
   'message_label',
   {
@@ -184,7 +190,7 @@ export const messageLabel = marketIntel.table(
     modelVersion: varchar('model_version', { length: 64 }).notNull(),
     createdAt: createdAt(),
   },
-  (t) => [index('message_label_message_idx').on(t.messageId)],
+  (t) => [uniqueIndex('message_label_message_uq').on(t.messageId)],
 );
 
 // ---------------------------------------------------------------- dictionaries
@@ -275,6 +281,36 @@ export const extractionEvent = marketIntel.table(
   (t) => [index('extraction_event_observation_idx').on(t.observationId)],
 );
 
+/**
+ * One row per pipeline call to a model, with the full request so it can be replayed. The request holds only
+ * scrubbed message text: no sender names, phone numbers or JIDs. `notes` is filled in when the rows are stored.
+ */
+export const llmCall = marketIntel.table(
+  'llm_call',
+  {
+    id: id(),
+    messageId: ref('message_id')
+      .notNull()
+      .references(() => waMessage.id),
+    /** extract, later classify, ocr … */
+    purpose: varchar('purpose', { length: 32 }).notNull(),
+    model: varchar('model', { length: 64 }).notNull(),
+    promptVersion: varchar('prompt_version', { length: 32 }).notNull(),
+    /** sha256 of the request body */
+    packetHash: varchar('packet_hash', { length: 64 }).notNull(),
+    request: jsonb('request').$type<Record<string, unknown>>().notNull(),
+    response: jsonb('response').$type<Record<string, unknown>>(),
+    stopReason: varchar('stop_reason', { length: 32 }),
+    outcome: llmCallOutcome('outcome').notNull(),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    /** Why rows of the output were not stored: "row 2: unknown_market Gondl" … */
+    notes: strings('notes'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('llm_call_message_idx').on(t.messageId)],
+);
+
 /** Aggregate per commodity × market × date, rebuilt by the aggregate job. */
 export const dailyPrice = marketIntel.table(
   'daily_price',
@@ -297,6 +333,27 @@ export const dailyPrice = marketIntel.table(
     updatedAt: tsz('updated_at').notNull().defaultNow(),
   },
   (t) => [uniqueIndex('daily_price_cmd_uq').on(t.commodityId, t.marketId, t.date)],
+);
+
+/**
+ * Cells (commodity × market × date) whose trusted observations changed since `daily_price` was last rebuilt.
+ * A re-mark takes a new `version`, so a change made during a rebuild is not lost.
+ */
+export const dailyPriceDirty = marketIntel.table(
+  'daily_price_dirty',
+  {
+    commodityId: ref('commodity_id')
+      .notNull()
+      .references(() => commodity.id),
+    marketId: ref('market_id')
+      .notNull()
+      .references(() => market.id),
+    date: date('date', { mode: 'string' }).notNull(),
+    /** From a sequence: unique and increasing, unlike a timestamp. */
+    version: bigserial('version', { mode: 'number' }).notNull(),
+    markedAt: tsz('marked_at').notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('daily_price_dirty_cell_uq').on(t.commodityId, t.marketId, t.date)],
 );
 
 // ---------------------------------------------------------------- insights
