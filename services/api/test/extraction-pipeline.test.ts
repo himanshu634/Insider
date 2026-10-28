@@ -121,8 +121,9 @@ describe('per-message extraction chain', () => {
     expect(requests).toHaveLength(1);
     const obs = await observations();
     expect(obs.map((o) => [o.minPerQuintal, o.maxPerQuintal, o.variety, o.obsDate, o.status])).toEqual([
-      [6300, 6475, null, '2026-10-19', 'auto'],
-      [5600, 6050, 'જાડી', '2026-10-19', 'auto'],
+      // No unit written and no history to check the magnitude against: a person confirms per 20 kg.
+      [6300, 6475, null, '2026-10-19', 'needs_review'],
+      [5600, 6050, 'જાડી', '2026-10-19', 'needs_review'],
     ]);
     const [label] = await t.db.select().from(messageLabel);
     expect(label).toMatchObject({ label: 'price', modelVersion: 'claude-opus-5-5:extract-v1' });
@@ -132,7 +133,13 @@ describe('per-message extraction chain', () => {
     expect(call!.request).toEqual(requests[0]);
     const events = await t.db.select().from(extractionEvent);
     expect(events).toHaveLength(2);
-    expect(events[0]!.after).toMatchObject({ evidence: 'એરંડા 1260-1295 ડીસા', llm_call_id: call!.id });
+    expect(events[0]!.after).toMatchObject({
+      min_raw: 1260,
+      max_raw: 1295,
+      evidence: 'એરંડા 1260-1295 ડીસા',
+      reasons: ['unit_not_written'],
+      llm_call_id: call!.id,
+    });
     expect(events[0]!.actor).toBe('model:claude-opus-5-5:extract-v1');
   });
 
@@ -253,10 +260,14 @@ describe('per-message extraction chain', () => {
     const body = 'Castor Gujarat average 1270, market steady';
     const first = await add(groups.g1, 'G1-0006', body);
     const forward = await add(groups.g3, 'G3-0002', body);
+    const blank = await add(groups.g1, 'G1-0008', '   ');
     const { client } = scriptedAnthropic([answer({ label: 'news', rows: [] })]);
     await run(first, client);
     await run(forward, client);
     await run(forward, client);
+    await run(blank, client);
+    // Neither the forward nor the blank text is left for extract-pending.
+    expect(await pendingExtraction(t.db, 10)).toEqual([]);
     const [cluster] = await t.db.select().from(contentCluster);
     expect(cluster).toMatchObject({ groupCount: 2, canonicalMessageId: first });
     expect((await t.db.select().from(messageLabel)).map((l) => l.messageId)).toEqual([first]);
@@ -265,7 +276,7 @@ describe('per-message extraction chain', () => {
   it('runs on ingest through the inline queue', async () => {
     await t.close();
     const body = 'singdana bold 1100-1180 per 20kg Rajkot';
-    const { client } = scriptedAnthropic([
+    const { client, requests } = scriptedAnthropic([
       answer({
         label: 'price',
         rows: [row({ commodity: 'groundnut', commodity_term: 'singdana', variety: 'bold', market: 'rajkot', market_term: 'Rajkot', min_price: 1100, max_price: 1180, unit_term: 'per 20kg', evidence: body })],
@@ -281,7 +292,11 @@ describe('per-message extraction chain', () => {
       },
     });
     expect(res.status).toBe(200);
-    expect((await observations()).map((o) => [o.minPerQuintal, o.maxPerQuintal])).toEqual([[5500, 5900]]);
+    expect((await observations()).map((o) => [o.minPerQuintal, o.maxPerQuintal, o.status])).toEqual([[5500, 5900, 'auto']]);
+    // The group is not in the catalog yet, so its name is its JID: the model must not see it.
+    const sent = JSON.stringify(requests[0]);
+    expect(sent).not.toContain('g2@g.us');
+    expect(sent).toContain('Group: unnamed');
   });
 });
 

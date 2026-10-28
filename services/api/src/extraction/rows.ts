@@ -38,6 +38,8 @@ export interface NormalizedRow {
   commodity: string;
   market: string;
   unit: string;
+  /** False when the message wrote no unit and DEFAULT_UNIT was used. */
+  unitWritten: boolean;
   variety: string | null;
   obsDate: string;
   minRaw: number | null;
@@ -152,6 +154,7 @@ export function normalizeRow(r: ExtractedRow, ctx: RowContext): RowResult {
       commodity: commodity.slug,
       market: market.slug,
       unit: unit.slug,
+      unitWritten: !!written,
       variety: r.variety?.trim() || null,
       obsDate,
       minRaw: r.min_price,

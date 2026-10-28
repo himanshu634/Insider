@@ -7,6 +7,7 @@ import type { Db } from '../db/client.js';
 import { commodity, extractionEvent, market, priceObservation, unit } from '../db/schema.js';
 import type { AppEnv } from '../env.js';
 import { badRequest, body, decodeCursor, limitParam, nextCursor, notFound } from '../http.js';
+import { observationSnapshot } from '../queries/observations.js';
 
 export const review = new Hono<AppEnv>();
 
@@ -44,17 +45,6 @@ export const toObservation = ({ obs, ...names }: ObservationRow): Schemas['Price
   status: obs.status,
 });
 
-const snapshot = (o: typeof priceObservation.$inferSelect) => ({
-  commodity_id: o.commodityId,
-  market_id: o.marketId,
-  unit_id: o.unitId,
-  variety: o.variety,
-  obs_date: o.obsDate,
-  min_raw: o.minRaw,
-  max_raw: o.maxRaw,
-  modal_raw: o.modalRaw,
-  arrivals_quintal: o.arrivalsQuintal,
-});
 
 review.get('/v1/review/observations', async (c) => {
   const q = c.req.query();
@@ -91,7 +81,7 @@ review.patch('/v1/review/observations', body('ObservationReview'), async (c) => 
   const updated = await db.transaction(async (tx) => {
     const [obs] = await tx.select().from(priceObservation).where(eq(priceObservation.id, req.id));
     if (!obs) throw notFound('Unknown observation');
-    const before = snapshot(obs);
+    const before = observationSnapshot(obs);
 
     let action: 'approved' | 'rejected' | 'edited';
     let changes: Partial<typeof priceObservation.$inferInsert> = {};
@@ -143,7 +133,7 @@ review.patch('/v1/review/observations', body('ObservationReview'), async (c) => 
       action,
       actor: `user:${user.id}`,
       before,
-      after: snapshot(after!),
+      after: observationSnapshot(after!),
     });
     return after!;
   });

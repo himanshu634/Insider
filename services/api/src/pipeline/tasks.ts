@@ -3,7 +3,7 @@
  * scheduled jobs. Extraction reads text messages; vision, aggregation and insights land later.
  */
 import type Anthropic from '@anthropic-ai/sdk';
-import { and, asc, eq, gte, inArray, lt, notExists, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, notExists, or, sql } from 'drizzle-orm';
 
 import type { Config } from '../config.js';
 import type { Db } from '../db/client.js';
@@ -22,6 +22,7 @@ import { callExtractor, type ExtractResult } from '../extraction/extract.js';
 import { GATE_VERSION, gate } from '../extraction/gate.js';
 import { type ExtractionOutput, packetText, systemPrompt, userPacket } from '../extraction/prompt.js';
 import { centralPerQuintal, type NormalizedRow, normalizeRow, type RowContext } from '../extraction/rows.js';
+import { observationSnapshot } from '../queries/observations.js';
 import { SCHEDULE_TZ } from './schedule.js';
 
 export const WATCHDOG_SILENCE_MS = 30 * 60 * 1000;
@@ -136,7 +137,8 @@ export async function extract(
 ): Promise<ExtractResult> {
   const { date, time } = istDateTime(loaded.message.sentAt);
   const packet = userPacket({
-    groupName: loaded.group.name,
+    // A group not yet in the catalog is named by its JID, which must not reach the model.
+    groupName: loaded.group.name === loaded.group.jid ? 'unnamed' : loaded.group.name,
     groupCommodities: loaded.group.primaryCommodities,
     sentAtIst: `${date} ${time}`,
     text: loaded.message.text!,
@@ -169,11 +171,14 @@ export const MAX_MEDIAN_DEVIATION = 0.4;
 const BOUNDS_DAYS = 30;
 const BOUNDS_MIN_SOURCES = 3;
 
-/** Sanity bounds against recent trusted observations (auto or approved). Adds `out_of_bounds`. */
+/**
+ * Sanity bounds against recent trusted observations (auto or approved). Adds `out_of_bounds`. A row whose unit
+ * was not written goes to review while there is no history to check its magnitude against (`unit_not_written`):
+ * a per-quintal price read as per 20 kg would otherwise be stored as auto at five times its value.
+ */
 export async function validate(db: Db, rows: NormalizedRow[]): Promise<NormalizedRow[]> {
   for (const row of rows) {
-    const price = centralPerQuintal(row);
-    if (price === null) continue;
+    const price = centralPerQuintal(row)!;
     const from = new Date(Date.parse(`${row.obsDate}T00:00:00Z`) - BOUNDS_DAYS * 86_400_000).toISOString().slice(0, 10);
     const central = sql<number>`coalesce(${priceObservation.modalPerQuintal}, (${priceObservation.minPerQuintal} + ${priceObservation.maxPerQuintal}) / 2)`;
     const [stats] = await db
@@ -192,9 +197,9 @@ export async function validate(db: Db, rows: NormalizedRow[]): Promise<Normalize
         ),
       );
     const median = stats?.median === null || stats?.median === undefined ? null : Number(stats.median);
-    if (median && stats!.sources >= BOUNDS_MIN_SOURCES && Math.abs(price - median) / median > MAX_MEDIAN_DEVIATION) {
-      row.reasons.push('out_of_bounds');
-    }
+    const checked = !!median && stats!.sources >= BOUNDS_MIN_SOURCES;
+    if (checked && Math.abs(price - median) / median > MAX_MEDIAN_DEVIATION) row.reasons.push('out_of_bounds');
+    if (!checked && !row.unitWritten) row.reasons.push('unit_not_written');
   }
   return rows;
 }
@@ -236,12 +241,21 @@ export async function store(
           confidence: row.confidence,
           status,
         })
-        .returning({ id: priceObservation.id });
+        .returning();
       await tx.insert(extractionEvent).values({
         observationId: obs!.id,
         action: 'extracted',
         actor: `model:${result.modelVersion}`,
-        after: { ...row, status, llm_call_id: result.llmCallId },
+        after: {
+          ...observationSnapshot(obs!),
+          status,
+          confidence: row.confidence,
+          reasons: row.reasons,
+          evidence: row.evidence,
+          arrivals: row.arrivals,
+          arrivals_unit: row.arrivalsUnit,
+          llm_call_id: result.llmCallId,
+        },
       });
     }
     await tx.update(llmCall).set({ notes }).where(eq(llmCall.id, result.llmCallId));
@@ -265,16 +279,20 @@ export async function processMessage(deps: PipelineDeps, { messageId }: { messag
 }
 
 /**
- * Text messages the chain has not finished: no label and no model call yet. Messages ingested while
+ * Text messages the chain has not finished: first of their cluster, no label and no model call yet. Messages ingested while
  * ANTHROPIC_API_KEY was unset wait here. A message whose call was refused or cut off is not retried.
  */
 export async function pendingExtraction(db: Db, limit: number): Promise<number[]> {
   const rows = await db
     .select({ id: waMessage.id })
     .from(waMessage)
+    .leftJoin(contentCluster, eq(waMessage.clusterId, contentCluster.id))
     .where(
       and(
         eq(waMessage.type, 'text'),
+        isNotNull(waMessage.contentHash),
+        // A forward stops at dedupe and is never labelled: only the cluster's first message is pending.
+        or(isNull(waMessage.clusterId), eq(contentCluster.canonicalMessageId, waMessage.id)),
         notExists(db.select({ one: sql`1` }).from(messageLabel).where(eq(messageLabel.messageId, waMessage.id))),
         notExists(db.select({ one: sql`1` }).from(llmCall).where(eq(llmCall.messageId, waMessage.id))),
       ),
