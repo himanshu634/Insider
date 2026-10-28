@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json && electron .",
     "package": "tsc -p tsconfig.json && electron-builder --mac",
+    "icons": "tsc -p tsconfig.json && node scripts/render-icons.mjs",
     "check": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json",
     "test": "vitest --run"
   },

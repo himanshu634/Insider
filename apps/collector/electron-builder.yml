@@ -17,6 +17,8 @@ files:
 npmRebuild: false
 mac:
   target: dir
+  # The Insider mark on its brand tile; regenerate with `pnpm icons` (scripts/render-icons.mjs).
+  icon: resources/icon.png
   category: public.app-category.business
   # Ad-hoc signature until a Developer ID exists (Phase 5). macOS ties a Full Disk Access grant to
   # this signature, so each new build needs the grant again.

@@ -10,6 +10,7 @@ export { default as EmptyState } from './EmptyState.svelte';
 export { default as Icon } from './Icon.svelte';
 export { default as IconButton } from './IconButton.svelte';
 export { default as Input } from './Input.svelte';
+export { default as Logo } from './Logo.svelte';
 export { default as PriceCell } from './PriceCell.svelte';
 export { default as SegmentedControl } from './SegmentedControl.svelte';
 export { default as Select } from './Select.svelte';
