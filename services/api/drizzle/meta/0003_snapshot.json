@@ -1,6 +1,6 @@
 {
-  "id": "b2d82e81-de8c-4f4e-bf62-81e4d6ef44e7",
-  "prevId": "f783c20a-dc57-4024-a0f1-ab058c351e46",
+  "id": "23e840de-3389-4d72-a4d5-47591dc10af7",
+  "prevId": "7b31d778-1414-4cda-b7bd-962a896fe4c4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -973,8 +973,8 @@
         }
       },
       "indexes": {
-        "message_label_message_idx": {
-          "name": "message_label_message_idx",
+        "message_label_message_uq": {
+          "name": "message_label_message_uq",
           "columns": [
             {
               "expression": "message_id",
@@ -983,7 +983,7 @@
               "nulls": "last"
             }
           ],
-          "isUnique": false,
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}
